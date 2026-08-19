@@ -1346,7 +1346,7 @@ main_menu() {
   local n=${#ACCOUNTS[@]} i=1 rec dot host
   cls
   printf '\n  %s%s%s\n' "$C" "$(rep '═' 60)" "$N"
-  printf '  %sDERISTAKU%s  %s·  Select-CRUD Kendali Claude%s\n' "$C$B" "$N" "$D" "$N"
+  printf '  %sDERISTA%s  %s·  Select-CRUD Kendali Claude%s\n' "$C$B" "$N" "$D" "$N"
   printf '  %s%s akun · %s sesi tmux · %s model · %s chat aktif · mode %s%s\n' \
     "$D" "$n" "$(tmux_count)" "${#MODELS[@]}" "$(chat_active)" "$(cfg mode tmux)" "$N"
   printf '  %s%s%s\n' "$C" "$(rep '═' 60)" "$N"
