@@ -53,37 +53,17 @@ Satu script (`derista.sh`) buat bootstrap VPS baru dari nol: pasang Node.js, Cla
 ```
 
 > ✅ **Default:** URL = `routers.dendikusnandi.tech` | Model = `dendi-ai`
-> ⚠️ Tambahkan akun & API key lo sendiri lewat menu setelah kepasang.
 
 ---
 
-## Install cepat (VPS baru)
+## Download & Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista.sh | bash -s install
 ```
 
-> ✅ **Tidak perlu password!**
-> ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code.
+> ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code, dll.
 > ✅ **Skip** kalau sudah terinstall.
-
----
-
-### 📥 Download manual
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/dendikusnandi/derista/main/derista.sh
-chmod +x derista.sh
-./derista.sh install
-```
-
----
-
-Habis install tinggal ketik:
-
-```bash
-derista
-```
 
 ---
 
@@ -109,23 +89,23 @@ derista
 
 ---
 
-## Cara pakai tool `derista`
+## Cara pakai
 
-Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat launch Claude Code dengan token + URL + model akun itu.
+Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat launch Claude Code.
 
 ### Menu
 
 | Tombol | Fungsi |
 |---|---|
-| `a` | **tambah akun** (nama, token `sk-…`, URL API, model, mode) |
+| `a` | **tambah akun** |
 | `e` | edit akun |
 | `d` | hapus akun |
 | `v` | lihat detail akun |
 | `o` | kelola daftar model |
 | `j` | kelola API key |
 | `u` | kelola URL endpoint |
-| `s` | setelan (default model, cmd, mode, dll) |
-| `m` | pantau pesan Claude (baca transcript `~/.claude/projects/*.jsonl`) |
+| `s` | setelan |
+| `m` | pantau pesan Claude |
 | `t` | monitor sesi tmux |
 | `n` | buka tmux baru |
 | `k` | kill semua sesi tmux |
@@ -133,23 +113,13 @@ Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat
 | `g` | tambah memory |
 | `0` | keluar |
 
-### Nambah akun pertama
-
-Tekan `a`, isi:
-
-- **Nama** — bebas, mis. `kerja`
-- **Token** — token `sk-…` dari provider lo
-- **URL API** — base URL provider (kosongin = pakai default)
-- **Model** — pilih dari daftar (default `dendi-ai`)
-- **Mode** — `langsung` (jalan di terminal ini) atau `tmux` (sesi background)
-
 ---
 
 ## Uninstall
 
 ```bash
-rm /usr/bin/derista              # copot tool derista
-npm rm -g @anthropic-ai/claude-code   # copot Claude Code (opsional)
+rm /usr/bin/derista
+npm rm -g @anthropic-ai/claude-code
 ```
 
 ---
@@ -157,7 +127,7 @@ npm rm -g @anthropic-ai/claude-code   # copot Claude Code (opsional)
 ## Keamanan
 
 - Repo ini **nggak nyimpen API key / token apa pun**. Array `API_KEYS` kosong.
-- Token yang lo tambah lewat menu `a` disimpan **lokal** di `/usr/bin/derista` di VPS lo — jangan commit file itu ke git / share sembarangan.
+- Token yang lo tambah lewat menu `a` disimpan **lokal** di `/usr/bin/derista`.
 
 ---
 
@@ -168,9 +138,6 @@ npm rm -g @anthropic-ai/claude-code   # copot Claude Code (opsional)
 ### **DENDI KUSNANDI**
 
 ![GitHub](https://img.shields.io/badge/GitHub-dendikusnandi-181717?style=for-the-badge&logo=github)
-![9Router](https://img.shields.io/badge/9Router-dendikusnandi.tech-10B981?style=for-the-badge)
-
----
 
 **⚡ AI Infrastructure Builder ⚡**
 
