@@ -1375,52 +1375,6 @@ main_menu() {
   printf '\n  %snomor = jalankan akun · huruf = aksi · m = resume sesi%s\n' "$D" "$N"
 }
 
-while true; do
-  n=${#ACCOUNTS[@]}
-  m_add=$((n+1)); m_edit=$((n+2)); m_del=$((n+3)); m_view=$((n+4))
-  m_mon=$((n+5)); m_new=$((n+6)); m_kt=$((n+7)); m_cc=$((n+8)); m_mem=$((n+9))
-  m_cl=$((n+10)); m_mdl=$((n+11)); m_set=$((n+12)); m_key=$((n+13)); m_url=$((n+14))
-  main_menu
-  echo
-  read -rp "  Pilih: " ch || { cls; exit 0; }
-  case "$ch" in
-    0|x|X|q|Q) cls; exit 0 ;;
-    a|A) add_account ;;
-    e|E) edit_account ;;
-    d|D) del_account ;;
-    v|V) view_data ;;
-    o|O) manage_models ;;
-    j|J) manage_keys ;;
-    u|U) manage_urls ;;
-    s|S) settings_menu ;;
-    m|M) watch_claude ;;
-    t|T) monitor_tmux ;;
-    n|N) new_tmux ;;
-    k|K) kill_all_tmux ;;
-    c|C) clear_all_chat ;;
-    g|G) manage_memory ;;
-    '') : ;;
-    *[!0-9]*) err "Masukkan nomor akun atau huruf aksi."; pause ;;
-    *)
-      if   (( ch>=1 && ch<=n )); then run_account "${ACCOUNTS[ch-1]}"
-      elif (( ch==m_add ));  then add_account
-      elif (( ch==m_edit )); then edit_account
-      elif (( ch==m_del ));  then del_account
-      elif (( ch==m_view )); then view_data
-      elif (( ch==m_mon ));  then monitor_tmux
-      elif (( ch==m_new ));  then new_tmux
-      elif (( ch==m_kt ));   then kill_all_tmux
-      elif (( ch==m_cc ));   then clear_all_chat
-      elif (( ch==m_mem ));  then manage_memory
-      elif (( ch==m_cl ));   then watch_claude
-      elif (( ch==m_mdl ));  then manage_models
-      elif (( ch==m_set ));  then settings_menu
-      elif (( ch==m_key ));  then manage_keys
-      elif (( ch==m_url ));  then manage_urls
-      else err "Pilihan tidak ada."; pause; fi ;;
-  esac
-done
-
 # ═══════════════════════════════════════════════════════════════
 # INSTALLER MODE
 # ═══════════════════════════════════════════════════════════════
@@ -1481,3 +1435,50 @@ if [ "${1:-}" = "install" ] || [ "${1:-}" = "-i" ]; then
   install_deps
   exit 0
 fi
+
+while true; do
+  n=${#ACCOUNTS[@]}
+  m_add=$((n+1)); m_edit=$((n+2)); m_del=$((n+3)); m_view=$((n+4))
+  m_mon=$((n+5)); m_new=$((n+6)); m_kt=$((n+7)); m_cc=$((n+8)); m_mem=$((n+9))
+  m_cl=$((n+10)); m_mdl=$((n+11)); m_set=$((n+12)); m_key=$((n+13)); m_url=$((n+14))
+  main_menu
+  echo
+  read -rp "  Pilih: " ch || { cls; exit 0; }
+  case "$ch" in
+    0|x|X|q|Q) cls; exit 0 ;;
+    a|A) add_account ;;
+    e|E) edit_account ;;
+    d|D) del_account ;;
+    v|V) view_data ;;
+    o|O) manage_models ;;
+    j|J) manage_keys ;;
+    u|U) manage_urls ;;
+    s|S) settings_menu ;;
+    m|M) watch_claude ;;
+    t|T) monitor_tmux ;;
+    n|N) new_tmux ;;
+    k|K) kill_all_tmux ;;
+    c|C) clear_all_chat ;;
+    g|G) manage_memory ;;
+    '') : ;;
+    *[!0-9]*) err "Masukkan nomor akun atau huruf aksi."; pause ;;
+    *)
+      if   (( ch>=1 && ch<=n )); then run_account "${ACCOUNTS[ch-1]}"
+      elif (( ch==m_add ));  then add_account
+      elif (( ch==m_edit )); then edit_account
+      elif (( ch==m_del ));  then del_account
+      elif (( ch==m_view )); then view_data
+      elif (( ch==m_mon ));  then monitor_tmux
+      elif (( ch==m_new ));  then new_tmux
+      elif (( ch==m_kt ));   then kill_all_tmux
+      elif (( ch==m_cc ));   then clear_all_chat
+      elif (( ch==m_mem ));  then manage_memory
+      elif (( ch==m_cl ));   then watch_claude
+      elif (( ch==m_mdl ));  then manage_models
+      elif (( ch==m_set ));  then settings_menu
+      elif (( ch==m_key ));  then manage_keys
+      elif (( ch==m_url ));  then manage_urls
+      else err "Pilihan tidak ada."; pause; fi ;;
+  esac
+done
+
