@@ -11,7 +11,7 @@
 # derista
 
 **Auto-installer + pusat kendali Claude Code buat VPS.**
-Satu script (`derista.sh`) buat bootstrap VPS baru dari nol: pasang Node.js, Claude Code CLI, tmux, jq, dan tool TUI `derista` buat ngelola banyak akun/token Claude sekaligus.
+Satu script (`derista`) buat bootstrap VPS baru dari nol: pasang Node.js, Claude Code CLI, tmux, jq, dan tool TUI `derista` buat ngelola banyak akun/token Claude sekaligus.
 
 <div align="center">
 
@@ -59,7 +59,7 @@ Satu script (`derista.sh`) buat bootstrap VPS baru dari nol: pasang Node.js, Cla
 ## Download & Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista.sh | bash -s install
+curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista | bash -s install
 ```
 
 > ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code, dll.

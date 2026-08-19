@@ -1,0 +1,1484 @@
+#!/usr/bin/env bash
+ACCOUNTS=(
+)
+MODELS=(
+"dendi-ai"
+)
+SETTINGS=(
+"url|https://routers.dendikusnandi.tech"
+"model|dendi-ai"
+"cmd|claude"
+"mode|langsung"
+"lines|40"
+"interval|2"
+"filter|semua"
+)
+API_KEYS=(
+)
+URLS=(
+"agentrouter-org|https://agentrouter.org"
+"tabitoken-com|https://tabitoken.com"
+"routers|https://routers.dendikusnandi.tech"
+)
+
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+PROJDIR="$HOME/.claude/projects"
+BASEDIR="$HOME/derista"
+
+if [ -t 1 ]; then
+  B=$'\e[1m'; D=$'\e[2m'; C=$'\e[36m'; G=$'\e[32m'; Y=$'\e[33m'
+  R=$'\e[31m'; M=$'\e[35m'; U=$'\e[34m'; N=$'\e[0m'
+else
+  B=; D=; C=; G=; Y=; R=; M=; U=; N=
+fi
+
+cols()  { tput cols 2>/dev/null || echo 80; }
+cls()   { command clear 2>/dev/null || printf '\033[2J\033[3J\033[H'; }
+rep()   { local i s=; for ((i=0;i<$2;i++)); do s+="$1"; done; printf '%s' "$s"; }
+rule()  { printf '  %s%s%s\n' "$D" "$(rep "${1:-─}" 60)" "$N"; }
+sect()  { printf '\n  %s%s%s %s%s%s\n' "$B" "$1" "$N" "$D" "$(rep '─' $((56-${#1})))" "$N"; }
+pause() { read -rp "$(printf '\n  %sEnter untuk kembali...%s ' "$D" "$N")" _ || true; }
+field() { printf '%s' "$1" | cut -d'|' -f"$2"; }
+short() { local s="${1#claude-}"; printf '%s' "${s%-20251001}"; }
+ok()    { printf '  %s✓%s %s\n' "$G" "$N" "$1"; }
+warn()  { printf '  %s!%s %s\n' "$Y" "$N" "$1"; }
+err()   { printf '  %s✕%s %s\n' "$R" "$N" "$1"; }
+head2() { cls; printf '\n  %s%s%s\n' "$C$B" "$1" "$N"; [ -n "$2" ] && printf '  %s%s%s\n' "$D" "$2" "$N"; rule; }
+
+cfg() {
+  local rec
+  for rec in "${SETTINGS[@]}"; do
+    [ "${rec%%|*}" = "$1" ] && { printf '%s' "${rec#*|}"; return; }
+  done
+  printf '%s' "$2"
+}
+
+cfg_set() {
+  local i found=0
+  for i in "${!SETTINGS[@]}"; do
+    if [ "${SETTINGS[i]%%|*}" = "$1" ]; then SETTINGS[i]="$1|$2"; found=1; fi
+  done
+  [ "$found" -eq 0 ] && SETTINGS+=("$1|$2")
+}
+
+name_exists() {
+  local rec
+  for rec in "${ACCOUNTS[@]}"; do
+    [ "$(field "$rec" 1)" = "$1" ] && return 0
+  done
+  return 1
+}
+
+key_exists() {
+  local rec
+  for rec in "${API_KEYS[@]}"; do
+    [ "$(field "$rec" 1)" = "$1" ] && return 0
+  done
+  return 1
+}
+
+key_token() {
+  local rec lbl="$1"
+  for rec in "${API_KEYS[@]}"; do
+    [ "$(field "$rec" 1)" = "$lbl" ] && { printf '%s' "$(field "$rec" 2)"; return 0; }
+  done
+  printf '%s' "$lbl"
+}
+
+key_usage() {
+  local lbl="$1" rec n=0
+  for rec in "${ACCOUNTS[@]}"; do
+    [ "$(field "$rec" 2)" = "$lbl" ] && n=$((n+1))
+  done
+  printf '%s' "$n"
+}
+
+url_exists() {
+  local rec
+  for rec in "${URLS[@]}"; do
+    [ "$(field "$rec" 1)" = "$1" ] && return 0
+  done
+  return 1
+}
+
+url_resolve() {
+  local rec lbl="$1"
+  for rec in "${URLS[@]}"; do
+    [ "$(field "$rec" 1)" = "$lbl" ] && { printf '%s' "$(field "$rec" 2)"; return 0; }
+  done
+  printf '%s' "$lbl"
+}
+
+url_usage() {
+  local lbl="$1" rec n=0
+  for rec in "${ACCOUNTS[@]}"; do
+    [ "$(field "$rec" 3)" = "$lbl" ] && n=$((n+1))
+  done
+  printf '%s' "$n"
+}
+
+rewrite_block() {
+  local name="$1"; shift
+  local body= it tmp
+  for it in "$@"; do body+="\"$it\""$'\n'; done
+  tmp="$(mktemp)"
+  awk -v name="$name" -v body="$body" '
+    $0 == name "=(" { print name "=("; printf "%s", body; skip=1; next }
+    skip && /^\)$/  { print ")"; skip=0; next }
+    skip            { next }
+                    { print }
+  ' "$SELF" > "$tmp" && cat "$tmp" > "$SELF"
+  rm -f "$tmp"
+}
+
+persist() {
+  rewrite_block ACCOUNTS "${ACCOUNTS[@]}"
+  rewrite_block MODELS "${MODELS[@]}"
+  rewrite_block SETTINGS "${SETTINGS[@]}"
+  rewrite_block API_KEYS "${API_KEYS[@]}"
+  rewrite_block URLS "${URLS[@]}"
+}
+
+commit() { persist; exec bash "$SELF"; }
+
+tmux_exists() { tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -Fxq "$1"; }
+
+tmux_go() {
+  if [ -n "$TMUX" ]; then tmux switch-client -t "=$1"; else tmux attach-session -t "=$1"; fi
+}
+
+sess_running() {
+  tmux_exists "$(acc_sess "$1")"
+}
+
+tmux_count() { tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c '^deristaku-' || true; }
+
+acc_dir() { printf '%s/%s' "$BASEDIR" "$1"; }
+enc_dir() { printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g'; }
+acc_proj() { printf '%s/%s' "$PROJDIR" "$(enc_dir "$(acc_dir "$1")")"; }
+acc_sess() { local s="deristaku-$1"; printf '%s' "${s//[^A-Za-z0-9_-]/_}"; }
+
+sess_acct() {
+  local rec nm
+  for rec in "${ACCOUNTS[@]}"; do
+    nm="$(field "$rec" 1)"
+    [ "$(acc_sess "$nm")" = "$1" ] && { printf '%s' "$nm"; return 0; }
+  done
+  return 1
+}
+
+pick_model() {
+  local i=1 p c
+  {
+    sect "PILIH MODEL"
+    for p in "${MODELS[@]}"; do printf '   %s%2d%s  %s\n' "$G" "$i" "$N" "$p"; i=$((i+1)); done
+    printf '   %s%2s%s  %s\n' "$Y" "m" "$N" "ketik manual"
+    printf '   %s%2s%s  %s\n' "$D" "0" "$N" "kembali"
+  } >&2
+  read -rp "  Model: " c || return 1
+  case "$c" in
+    0|x|X|'') return 1 ;;
+    m|M) local v; read -rp "  Nama model: " v || return 1; [ -z "$v" ] && return 1; printf '%s' "$v"; return 0 ;;
+  esac
+  if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=${#MODELS[@]} )); then printf '%s' "${MODELS[c-1]}"; return 0; fi
+  return 1
+}
+
+pick_api_key() {
+  local i=1 rec c
+  [ ${#API_KEYS[@]} -eq 0 ] && { warn "Belum ada API key — tambahkan dulu."; pause; return 1; }
+  {
+    sect "PILIH API KEY"
+    for rec in "${API_KEYS[@]}"; do
+      printf '   %s%2d%s  %-20s %s%s…%s%s\n' "$G" "$i" "$N" \
+        "$(field "$rec" 1)" "$D" "${rec##*|}" "$N"
+      i=$((i+1))
+    done
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  API key: " c || return 1
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return 1
+  if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=${#API_KEYS[@]} )); then
+    printf '%s' "$(field "${API_KEYS[c-1]}" 1)"; return 0
+  fi
+  err "Nomor tidak valid." >&2; return 1
+}
+
+pick_mode() {
+  local c
+  {
+    sect "MODE JALAN"
+    printf '   %s 1%s  tmux      %s(latar belakang, bisa dipantau & disambung ulang)%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 2%s  langsung  %s(jalan di terminal ini, keluar = balik ke menu)%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  Mode: " c || return 1
+  case "$c" in
+    1) printf 'tmux' ;;
+    2) printf 'langsung' ;;
+    *) return 1 ;;
+  esac
+}
+
+pick_filter() {
+  local c
+  {
+    sect "FILTER PESAN"
+    printf '   %s 1%s  semua   %spesan + berpikir + tool + hasil%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 2%s  chat    %shanya pesan kamu & jawaban Claude%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 3%s  alat    %spesan + panggilan tool + hasil%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  Filter: " c || return 1
+  case "$c" in
+    1) printf 'semua' ;;
+    2) printf 'chat' ;;
+    3) printf 'alat' ;;
+    *) return 1 ;;
+  esac
+}
+
+run_account() {
+  local rec="$1" nm klbl urlb mdl cmd mode tok url sess wd
+  nm="$(field "$rec" 1)"; klbl="$(field "$rec" 2)"; urlb="$(field "$rec" 3)"
+  mdl="$(field "$rec" 4)"; cmd="$(field "$rec" 5)"; mode="$(field "$rec" 6)"
+  tok="$(key_token "$klbl")"; url="$(url_resolve "$urlb")"
+  [ -z "$cmd" ]  && cmd="$(cfg cmd claude)"
+  [ -z "$mode" ] && mode="$(cfg mode tmux)"
+  wd="$(acc_dir "$nm")"; mkdir -p "$wd" 2>/dev/null
+  cls
+  if [ "$mode" = "langsung" ] || ! command -v tmux >/dev/null 2>&1; then
+    printf '  %s▶ %s%s %s· %s · langsung%s\n' "$C$B" "$nm" "$N" "$D" "$(short "$mdl")" "$N"
+    printf '  %s%s%s\n\n' "$D" "$wd" "$N"
+    ANTHROPIC_AUTH_TOKEN="$tok" ANTHROPIC_BASE_URL="$url" ANTHROPIC_MODEL="$mdl" \
+      bash -c "cd $(printf '%q' "$wd") && exec $cmd"
+    return
+  fi
+  sess="$(acc_sess "$nm")"
+  if ! tmux_exists "$sess"; then
+    tmux new-session -d -s "$sess" -c "$wd" \
+      "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd"
+  fi
+  tmux_go "$sess"
+}
+
+add_account() {
+  head2 "TAMBAH AKUN" "kosong + Enter = batal"
+  local name klbl ulbl model cmd mode
+  read -rp "  Nama akun     : " name || return
+  name="${name%.sh}"
+  [ -z "$name" ] && { warn "Dibatalkan."; pause; return; }
+  name_exists "$name" && { err "Nama '$name' sudah ada."; pause; return; }
+  klbl=$(pick_api_key) || return
+  [ -z "$klbl" ] && { warn "API key belum dipilih."; pause; return; }
+  ulbl=$(pick_url) || return
+  [ -z "$ulbl" ] && { warn "URL belum dipilih."; pause; return; }
+  model=$(pick_model) || model="$(cfg model)"
+  read -rp "  Command [$(cfg cmd)] : " cmd; cmd="${cmd:-$(cfg cmd)}"
+  mode=$(pick_mode) || mode="$(cfg mode tmux)"
+  ACCOUNTS+=("$name|$klbl|$ulbl|$model|$cmd|$mode")
+  ok "Akun $name dibuat ($(short "$model") · key $klbl · url $ulbl · $mode)."; pause
+  commit
+}
+
+edit_account() {
+  local n=${#ACCOUNTS[@]}
+  [ "$n" -eq 0 ] && { warn "Belum ada akun."; pause; return; }
+  local -a items=()
+  local i=1 rec
+  {
+    echo
+    for rec in "${ACCOUNTS[@]}"; do
+      printf '   %s%2d%s  %-12s %s%s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(short "$(field "$rec" 4)")" "$N"
+      i=$((i+1))
+    done
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  local c target
+  read -rp "  Edit akun nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  target=$((c-1))
+  local changed=0
+  while true; do
+    local rec="${ACCOUNTS[target]}" nm klbl ulbl tok url mdl cmd mode v c2
+    nm=$(field "$rec" 1); klbl=$(field "$rec" 2); ulbl=$(field "$rec" 3)
+    mdl=$(field "$rec" 4); cmd=$(field "$rec" 5); mode=$(field "$rec" 6)
+    [ -z "$mode" ] && mode="$(cfg mode tmux)"
+    tok="$(key_token "$klbl")"; url="$(url_resolve "$ulbl")"
+    head2 "EDIT AKUN · $nm"
+    printf '   %s 1%s  Nama    %s\n' "$G" "$N" "$nm"
+    printf '   %s 2%s  Token   %s%s · %s…%s%s\n' "$G" "$N" "$D" "$klbl" "${tok:0:14}" "$N"
+    printf '   %s 3%s  URL     %s%s · %s%s%s\n' "$G" "$N" "$D" "$ulbl" "$url" "$N"
+    printf '   %s 4%s  Model   %s\n' "$G" "$N" "$mdl"
+    printf '   %s 5%s  Command %s\n' "$G" "$N" "$cmd"
+    printf '   %s 6%s  Mode    %s\n' "$G" "$N" "$mode"
+    printf '   %s 0%s  selesai & simpan\n' "$D" "$N"
+    read -rp "  Ubah nomor: " c2 || break
+    case "$c2" in
+      0|''|x|X) break ;;
+      1) read -rp "  Nama baru: " v
+         if [ -n "$v" ] && ! name_exists "$v"; then nm="$v"; changed=1
+         elif [ -n "$v" ]; then err "Nama sudah dipakai."; pause; fi ;;
+      2) v=$(pick_api_key) && { klbl="$v"; changed=1; } ;;
+      3) v=$(pick_url) && { ulbl="$v"; changed=1; } ;;
+      4) v=$(pick_model) && { mdl="$v"; changed=1; } ;;
+      5) read -rp "  Command baru: " v; [ -n "$v" ] && { cmd="$v"; changed=1; } ;;
+      6) v=$(pick_mode) && { mode="$v"; changed=1; } ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+    ACCOUNTS[target]="$nm|$klbl|$ulbl|$mdl|$cmd|$mode"
+  done
+  [ "$changed" -eq 1 ] && { ok "Tersimpan."; pause; commit; }
+}
+
+del_account() {
+  head2 "HAPUS AKUN"
+  local n=${#ACCOUNTS[@]}
+  [ "$n" -eq 0 ] && { warn "Belum ada akun."; pause; return; }
+  local -a items=()
+  local i=1 rec c
+  {
+    echo
+    for rec in "${ACCOUNTS[@]}"; do
+      printf '   %s%2d%s  %-12s %s%s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(short "$(field "$rec" 4)")" "$N"
+      i=$((i+1))
+    done
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  Hapus akun nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  local idx=$((c-1)) nm yn
+  nm=$(field "${ACCOUNTS[idx]}" 1)
+  read -rp "  Yakin hapus $nm? (y/N): " yn || return
+  if [[ "$yn" =~ ^[Yy]$ ]]; then
+    ACCOUNTS=("${ACCOUNTS[@]:0:idx}" "${ACCOUNTS[@]:idx+1}")
+    ok "Akun $nm dihapus."; pause
+    commit
+  else
+    warn "Dibatalkan."; pause
+  fi
+}
+
+view_data() {
+  head2 "DATA AKUN" "${#ACCOUNTS[@]} akun tersimpan"
+  [ ${#ACCOUNTS[@]} -eq 0 ] && { warn "Belum ada akun."; pause; return; }
+  local i=1 rec st klbl ulbl tok url
+  for rec in "${ACCOUNTS[@]}"; do
+    if sess_running "$(field "$rec" 1)"; then st="${G}● jalan${N}"; else st="${D}○ mati${N}"; fi
+    klbl=$(field "$rec" 2); ulbl=$(field "$rec" 3)
+    tok="$(key_token "$klbl")"; url="$(url_resolve "$ulbl")"
+    printf '\n  %s%d) %s%s   %s\n' "$B" "$i" "$(field "$rec" 1)" "$N" "$st"
+    printf '     %stoken  %s%s · %s…%s\n' "$D" "$N" "$klbl" "${tok:0:14}" "$N"
+    printf '     %surl    %s%s · %s%s\n' "$D" "$N" "$ulbl" "$url" "$N"
+    printf '     %smodel  %s%s\n' "$D" "$N" "$(field "$rec" 4)"
+    printf '     %scmd    %s%s\n' "$D" "$N" "$(field "$rec" 5)"
+    printf '     %smode   %s%s\n' "$D" "$N" "$(field "$rec" 6)"
+    i=$((i+1))
+  done
+  pause
+}
+
+manage_models() {
+  while true; do
+    head2 "KELOLA MODEL" "${#MODELS[@]} model · default: $(cfg model)"
+    local i=1 p
+    for p in "${MODELS[@]}"; do
+      if [ "$p" = "$(cfg model)" ]; then printf '   %s%2d%s  %s %s★ default%s\n' "$G" "$i" "$N" "$p" "$Y" "$N"
+      else printf '   %s%2d%s  %s\n' "$G" "$i" "$N" "$p"; fi
+      i=$((i+1))
+    done
+    sect "AKSI"
+    printf '   %sa%s  tambah model      %se%s  ubah model\n' "$C" "$N" "$C" "$N"
+    printf '   %sd%s  hapus model       %sf%s  jadikan default\n' "$C" "$N" "$C" "$N"
+    printf '   %s0%s  kembali\n' "$D" "$N"
+    local c v k
+    read -rp "  Pilih: " c || return
+    case "$c" in
+      0|x|X|'') return ;;
+      a|A) read -rp "  Nama model baru: " v
+           if [ -z "$v" ]; then warn "Dibatalkan."; pause
+           else MODELS+=("$v"); ok "Model $v ditambah."; pause; commit; fi ;;
+      e|E) read -rp "  Ubah model nomor: " k
+           if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=${#MODELS[@]} )); then
+             read -rp "  Nama baru [${MODELS[k-1]}]: " v
+             if [ -n "$v" ]; then
+               [ "${MODELS[k-1]}" = "$(cfg model)" ] && cfg_set model "$v"
+               MODELS[k-1]="$v"; ok "Diubah."; pause; commit
+             fi
+           else err "Nomor tidak valid."; pause; fi ;;
+      d|D) read -rp "  Hapus model nomor: " k
+           if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=${#MODELS[@]} )); then
+             v="${MODELS[k-1]}"
+             read -rp "  Yakin hapus $v? (y/N): " c
+             if [[ "$c" =~ ^[Yy]$ ]]; then
+               MODELS=(
+"dendi-ai"
+)
+               ok "Model $v dihapus."; pause; commit
+             fi
+           else err "Nomor tidak valid."; pause; fi ;;
+      f|F) read -rp "  Jadikan default nomor: " k
+           if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=${#MODELS[@]} )); then
+             cfg_set model "${MODELS[k-1]}"; ok "Default: ${MODELS[k-1]}"; pause; commit
+           else err "Nomor tidak valid."; pause; fi ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+settings_menu() {
+  while true; do
+    head2 "PENGATURAN" "dipakai sebagai nilai bawaan akun baru & pemantau"
+    printf '   %s 1%s  URL API bawaan       %s\n' "$G" "$N" "$(cfg url)"
+    printf '   %s 2%s  Model bawaan         %s\n' "$G" "$N" "$(cfg model)"
+    printf '   %s 3%s  Command bawaan       %s\n' "$G" "$N" "$(cfg cmd)"
+    printf '   %s 4%s  Mode jalan bawaan    %s\n' "$G" "$N" "$(cfg mode tmux)"
+    printf '   %s 5%s  Baris pesan dipantau %s\n' "$G" "$N" "$(cfg lines 40)"
+    printf '   %s 6%s  Interval live (detik) %s\n' "$G" "$N" "$(cfg interval 2)"
+    printf '   %s 7%s  Filter pesan bawaan  %s\n' "$G" "$N" "$(cfg filter semua)"
+    printf '   %s 0%s  kembali & simpan\n' "$D" "$N"
+    local c v
+    read -rp "  Ubah nomor: " c || return
+    case "$c" in
+      0|x|X|'') commit ;;
+      1) read -rp "  URL baru: " v; [ -n "$v" ] && cfg_set url "$v" ;;
+      2) v=$(pick_model) && cfg_set model "$v" ;;
+      3) read -rp "  Command baru: " v; [ -n "$v" ] && cfg_set cmd "$v" ;;
+      4) v=$(pick_mode) && cfg_set mode "$v" ;;
+      5) read -rp "  Jumlah baris: " v; [[ "$v" =~ ^[0-9]+$ ]] && (( v>0 )) && cfg_set lines "$v" ;;
+      6) read -rp "  Interval detik: " v; [[ "$v" =~ ^[0-9]+$ ]] && (( v>0 )) && cfg_set interval "$v" ;;
+      7) v=$(pick_filter) && cfg_set filter "$v" ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+sess_files() {
+  [ -d "$PROJDIR" ] || return 0
+  local scope="$PROJDIR"
+  if [ -n "$1" ]; then
+    scope="$(acc_proj "$1")"
+    if [ ! -d "$scope" ]; then
+      local legacy="$PROJDIR/-root-dendie-$1"
+      [ -d "$legacy" ] && scope="$legacy" || return 0
+    fi
+  fi
+  find "$scope" -maxdepth 2 -name '*.jsonl' -printf '%T@|%p\n' 2>/dev/null | sort -rn | cut -d'|' -f2-
+}
+
+sess_meta() {
+  jq -rR '
+    fromjson? // empty
+    | if .type=="ai-title" then "T\t" + ((.aiTitle // "") | tostring)
+      elif .type=="last-prompt" then "P\t" + ((.lastPrompt // "") | tostring)
+      elif .type=="user" and (.message.content|type)=="string" then "U\t1"
+      elif .type=="assistant" then "A\t" + (((.message.content // []) | map(select(.type=="tool_use")) | length) | tostring)
+      else empty end
+  ' "$1" 2>/dev/null | awk -F'\t' '
+    $1=="T"{t=$2} $1=="P"{p=$2} $1=="U"{u++} $1=="A"{a++; k+=$2}
+    END{ if(t=="") t=p; gsub(/\|/," ",t); printf "%s|%d|%d|%d\n", t, u+0, a+0, k+0 }'
+}
+
+ago() {
+  local d=$(( $(date +%s) - ${1%.*} ))
+  (( d<0 )) && d=0
+  if   (( d<60 ));    then printf '%ds lalu' "$d"
+  elif (( d<3600 ));  then printf '%dm lalu' $((d/60))
+  elif (( d<86400 )); then printf '%dj lalu' $((d/3600))
+  else printf '%dh lalu' $((d/86400)); fi
+}
+
+render_msgs() {
+  local f="$1" lim="$2" flt="$3" w
+  w=$(( $(cols) - 16 )); [ "$w" -lt 28 ] && w=28
+  tail -n 3000 "$f" 2>/dev/null | jq -rR \
+    --arg UC "$G" --arg AC "$C" --arg TC "$Y" --arg RC "$M" --arg DC "$D" --arg NC "$N" \
+    --argjson w "$w" --arg flt "$flt" '
+    def clip($n): if (length > $n) then (.[0:$n] + "…") else . end;
+    def one: (. // "") | tostring | gsub("[\n\t\r]+"; " ") | gsub("  +"; " ") | sub("^ +"; "");
+    def ts: (.timestamp // "")
+      | if . == "" then "--:--:--"
+        else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | strflocaltime("%H:%M:%S")) end;
+    def pad7: (. + "       ") | .[0:7];
+    def brief:
+      .name as $n | (.input // {}) as $i
+      | if   $n == "Bash" then ($i.command // "")
+        elif $n == "Read" or $n == "Write" or $n == "Edit" or $n == "NotebookEdit" then ($i.file_path // "")
+        elif $n == "Grep" then ((($i.pattern // "") + " " + ($i.path // "")))
+        elif $n == "Glob" then ($i.pattern // "")
+        elif $n == "Task" or $n == "Agent" then (($i.description // $i.subagent_type) // "")
+        elif $n == "TodoWrite" then (((($i.todos // []) | length) | tostring) + " todo")
+        elif $n == "WebFetch" or $n == "WebSearch" then (($i.url // $i.query) // "")
+        elif $n == "Skill" then ($i.skill // "")
+        else ($i | tostring) end;
+    def res:
+      (.content // "")
+      | if type == "array" then (map(.text // "") | join(" ")) else tostring end;
+    fromjson? // empty
+    | . as $e
+    | ($e | ts) as $tm
+    | (if ($e.isSidechain // false) then "↳ " else "" end) as $sc
+    | if $e.type == "user" and ($e.message.content | type) == "string" then
+        [ $DC + $tm + $NC + " " + $UC + "▸ kamu  " + $NC + " " + $sc + (($e.message.content | one) | clip($w)) ]
+      elif $e.type == "user" and ($e.message.content | type) == "array" then
+        (if $flt == "chat" then []
+         else [ $e.message.content[] | select(.type == "tool_result")
+                | $DC + $tm + " ↩ hasil  " + $sc + ((res | one) | clip($w)) + $NC ] end)
+      elif $e.type == "assistant" then
+        [ $e.message.content[]?
+          | if .type == "text" then
+              ($DC + $tm + $NC + " " + $AC + "◆ claude" + $NC + " " + $sc + ((.text | one) | clip($w)))
+            elif .type == "thinking" then
+              (if $flt == "semua" then ($DC + $tm + " · pikir  " + $sc + ((.thinking | one) | clip($w)) + $NC) else empty end)
+            elif .type == "tool_use" then
+              (if $flt == "chat" then empty
+               else ($DC + $tm + $NC + " " + $TC + "⚙ " + (.name | pad7) + $NC + " " + $DC + $sc + ((brief | one) | clip($w)) + $NC) end)
+            else empty end ]
+      else [] end
+    | .[]
+  ' 2>/dev/null | tail -n "$lim"
+}
+
+sess_banner() {
+  local f="$1" flt="$2" lim="$3" live="$4" proj sid meta title nu na nk mt now dot
+  proj="$(basename "$(dirname "$f")")"
+  sid="$(basename "$f" .jsonl)"
+  meta="$(sess_meta "$f")"
+  title="$(printf '%s' "$meta" | cut -d'|' -f1)"
+  nu="$(printf '%s' "$meta" | cut -d'|' -f2)"
+  na="$(printf '%s' "$meta" | cut -d'|' -f3)"
+  nk="$(printf '%s' "$meta" | cut -d'|' -f4)"
+  mt="$(stat -c %Y "$f" 2>/dev/null || echo 0)"; now="$(date +%s)"
+  if (( now - mt < 45 )); then dot="${G}● aktif${N}"; else dot="${D}○ idle${N}"; fi
+  [ -z "$title" ] && title="(tanpa judul)"
+  printf '\n  %s%s%s  %s\n' "$W$B" "$(printf '%s' "$title" | cut -c1-46)" "$N" "$dot"
+  printf '  %s%s · %s · %s%s\n' "$D" "$proj" "${sid:0:8}" "$(ago "$mt")" "$N"
+  printf '  %s%s pesan · %s balasan · %s tool · filter %s · %s baris%s%s\n' \
+    "$D" "$nu" "$na" "$nk" "$flt" "$lim" "${live:+ · LIVE}" "$N"
+  rule
+}
+
+follow_session() {
+  local f="$1" lim="$2" flt="$3" itv stop=0 sig=x cur
+  itv="$(cfg interval 2)"
+  trap 'stop=1' INT
+  while [ "$stop" -eq 0 ]; do
+    cur="$(stat -c '%s|%Y' "$f" 2>/dev/null)"
+    if [ "$cur" != "$sig" ]; then
+      sig="$cur"; cls
+      sess_banner "$f" "$flt" "$lim" live
+      render_msgs "$f" "$lim" "$flt"
+      printf '\n'; rule
+      printf '  %sLIVE tiap %ss · Ctrl-C untuk berhenti%s\n' "$Y" "$itv" "$N"
+    fi
+    sleep "$itv"
+  done
+  trap - INT
+  printf '\n'
+}
+
+view_session() {
+  local f="$1" lim flt c v
+  lim="$(cfg lines 40)"; flt="$(cfg filter semua)"
+  while true; do
+    cls
+    sess_banner "$f" "$flt" "$lim"
+    render_msgs "$f" "$lim" "$flt"
+    echo; rule
+    printf '  %sEnter%s segarkan   %sf%s live   %sc%s filter   %sj%s jumlah   %st%s tail mentah   %s0%s kembali\n' \
+      "$C" "$N" "$C" "$N" "$C" "$N" "$C" "$N" "$C" "$N" "$D" "$N"
+    read -rp "  > " c || return
+    case "$c" in
+      '') : ;;
+      f|F) follow_session "$f" "$lim" "$flt" ;;
+      c|C) v=$(pick_filter) && flt="$v" ;;
+      j|J) read -rp "  Jumlah baris: " v; [[ "$v" =~ ^[0-9]+$ ]] && (( v>0 )) && lim="$v" ;;
+      t|T) cls; tail -n 20 "$f" | cut -c1-"$(cols)"; pause ;;
+      0|x|X|q|Q) return ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+del_one_session() {
+  local f="$1" meta title yn
+  [ -f "$f" ] || { warn "Sesi tidak ada."; pause; return 1; }
+  meta="$(sess_meta "$f")"; title="$(printf '%s' "$meta" | cut -d'|' -f1)"
+  [ -z "$title" ] && title="(tanpa judul)"
+  head2 "HAPUS SATU SESI CHAT"
+  printf '  %s%s%s\n' "$B" "$(printf '%s' "$title" | cut -c1-46)" "$N"
+  printf '  %s%s · %s%s\n\n' "$D" "$(basename "$(dirname "$f")")" "$(basename "$f")" "$N"
+  read -rp "  Yakin hapus sesi ini? (y/N): " yn || return 1
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return 1; }
+  rm -f "$f" && ok "Sesi dihapus." || err "Gagal menghapus."
+  pause
+}
+
+pick_acc_scope() {
+  local n=${#ACCOUNTS[@]} i=1 rec c
+  {
+    sect "PILIH AKUN"
+    printf '   %s a%s  semua akun\n' "$G" "$N"
+    for rec in "${ACCOUNTS[@]}"; do
+      printf '   %s%2d%s  %-12s %s%s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(short "$(field "$rec" 4)")" "$N"
+      i=$((i+1))
+    done
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  Akun: " c || return 1
+  case "$c" in
+    0|x|X|'') return 1 ;;
+    a|A) printf '*'; return 0 ;;
+  esac
+  if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=n )); then printf '%s' "$(field "${ACCOUNTS[c-1]}" 1)"; return 0; fi
+  err "Nomor tidak valid." >&2; return 1
+}
+
+resume_session() {
+  local f="$1" acct_arg="$2"
+  local sid proj acct nm klbl ulbl tok url mdl cmd mode wd sess msg sess_name
+  sid="$(basename "$f" .jsonl)"
+  proj="$(basename "$(dirname "$f")")"
+  acct="${acct_arg:-}"
+  if [ -z "$acct" ]; then
+    acct="${proj#-root-deristaku-}"; acct="${acct#-root-dendie-}"; acct="${acct#-root-}"
+    [ -z "$acct" ] && acct="default"
+  fi
+  local found=0
+  local rec
+  for rec in "${ACCOUNTS[@]}"; do
+    if [ "$(field "$rec" 1)" = "$acct" ]; then found=1; break; fi
+  done
+  if [ "$found" -eq 0 ]; then
+    err "Akun '$acct' tidak ada di ACCOUNTS — buat dulu lewat menu a."; pause; return 1
+  fi
+  nm="$acct"; klbl="$(field "$rec" 2)"; ulbl="$(field "$rec" 3)"
+  mdl="$(field "$rec" 4)"; cmd="$(field "$rec" 5)"; mode="$(field "$rec" 6)"
+  tok="$(key_token "$klbl")"; url="$(url_resolve "$ulbl")"
+  [ -z "$cmd" ]  && cmd="$(cfg cmd claude)"
+  [ -z "$mode" ] && mode="$(cfg mode tmux)"
+  wd="$(acc_dir "$nm")"; mkdir -p "$wd" 2>/dev/null
+  cls
+  msg="▶ $nm · resume $(short "$sid") · $(short "$mdl") · $mode"
+  if [ "$mode" = "langsung" ] || ! command -v tmux >/dev/null 2>&1; then
+    printf '  %s%s%s\n\n' "$C$B" "$msg" "$N"
+    ANTHROPIC_AUTH_TOKEN="$tok" ANTHROPIC_BASE_URL="$url" ANTHROPIC_MODEL="$mdl" \
+      bash -c "cd $(printf '%q' "$wd") && exec $cmd --resume $sid"
+    return
+  fi
+  sess_name="$(acc_sess "$nm")"
+  if tmux_exists "$sess_name"; then
+    sess="$(printf '%s' "$sid" | cut -c1-6)"
+    sess_name="deristaku-${nm}-${sess}"
+    i=2
+    while tmux_exists "$sess_name"; do sess_name="deristaku-${nm}-${sess}-$i"; i=$((i+1)); done
+  fi
+  tmux new-session -d -s "$sess_name" -c "$wd" \
+    "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd --resume $sid"
+  tmux_go "$sess_name"
+}
+
+watch_claude() {
+  local -a files
+  local scope="*" acctarg sort="newest" query="" page=1 per=10
+  while true; do
+    [ "$scope" = "*" ] && acctarg="" || acctarg="$scope"
+    local total header
+    mapfile -t files < <(sess_files "$acctarg")
+    if [ ${#files[@]} -eq 0 ]; then
+      head2 "PANTAU PESAN CLAUDE" "akun: $([ "$scope" = "*" ] && echo "semua" || echo "$scope") · riwayat di $PROJDIR"
+      if [ "$scope" = "*" ]; then warn "Belum ada riwayat sesi."
+      else warn "Akun '$scope' belum punya riwayat (jalankan dulu akunnya)."; fi
+      pause; continue
+    fi
+
+    case "$sort" in
+      newest) ;;
+      oldest)
+        local -a rev=()
+        for ((i=${#files[@]}-1; i>=0; i--)); do rev+=("${files[i]}"); done
+        files=("${rev[@]}")
+        ;;
+      msgs)
+        local -a sorted=()
+        while IFS= read -r line; do sorted+=("$line"); done < <(
+          for f in "${files[@]}"; do
+            local nu; nu="$(printf '%s' "$(sess_meta "$f")" | cut -d'|' -f2)"
+            printf '%010d|%s\n' "$nu" "$f"
+          done | sort -rn
+        )
+        files=()
+        for line in "${sorted[@]}"; do files+=("${line#*|}"); done
+        ;;
+    esac
+
+    if [ -n "$query" ]; then
+      local -a filtered=()
+      local ql; ql="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')"
+      for f in "${files[@]}"; do
+        local t; t="$(printf '%s' "$(sess_meta "$f")" | cut -d'|' -f1)"
+        local tl; tl="$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')"
+        [[ "$tl" == *"$ql"* ]] && filtered+=("$f")
+      done
+      files=("${filtered[@]}")
+    fi
+
+    total=${#files[@]}
+    local pages=$(( (total + per - 1) / per ))
+    (( pages < 1 )) && pages=1
+    (( page > pages )) && page=$pages
+    (( page < 1 )) && page=1
+    local start=$(( (page-1)*per ))
+    local end=$(( start + per ))
+    (( end > total )) && end=$total
+
+    header="akun: $([ "$scope" = "*" ] && echo "semua" || echo "$scope")"
+    header+=" · $total sesi"
+    header+=" · urut: $sort"
+    [ -n "$query" ] && header+=" · cari: \"$query\""
+    header+=" · halaman $page/$pages"
+    head2 "PANTAU PESAN CLAUDE" "$header"
+
+    local i=1 f meta title nu na nk mt now dot sz acct
+    now="$(date +%s)"
+    for (( idx=start; idx<end; idx++ )); do
+      f="${files[idx]}"
+      meta="$(sess_meta "$f")"
+      title="$(printf '%s' "$meta" | cut -d'|' -f1)"
+      nu="$(printf '%s' "$meta" | cut -d'|' -f2)"
+      na="$(printf '%s' "$meta" | cut -d'|' -f3)"
+      nk="$(printf '%s' "$meta" | cut -d'|' -f4)"
+      [ -z "$title" ] && title="(tanpa judul)"
+      mt="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+      sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+      if (( now - mt < 45 )); then dot="${G}●${N}"; else dot="${D}○${N}"; fi
+      acct="$(basename "$(dirname "$f")")"; acct="${acct#-root-deristaku-}"; acct="${acct#-root-dendie-}"; acct="${acct#-root-}"
+      [ -z "$acct" ] && acct="-"
+      printf '   %s%2d%s %s %s\n' "$G" "$i" "$N" "$dot" "$(printf '%s' "$title" | cut -c1-44)"
+      printf '        %s@%s%s  %s%s%s  %s· %s pesan · %s reply · %s tool · %s%s\n' \
+        "$D" "$acct" "$N" "$M" "$nu+$na+$nk" "$N" "$D" "$nu" "$na" "$nk" "$(ago "$mt")" "$N"
+      printf '        %s%s · %s · %s%s\n' \
+        "$D" "$(printf '%s' "$title" | cut -c1-44)" \
+        "$(human_size "$sz")" \
+        "$f" "$N"
+      i=$((i+1))
+    done
+    sect "AKSI"
+    printf '   %sp%s  pilih akun   %ss%s  sort (newest/oldest/msgs)   %s/%s  cari judul\n' "$C" "$N" "$C" "$N" "$C" "$N"
+    printf '   %sr%s  RESUME sesi   %sv%s  view detail (read-only)    %sl%s  live pantau\n' "$C" "$N" "$C" "$N" "$C" "$N"
+    printf '   %sn%s  halaman >    %sb%s  halaman <                  %sh<n>%s  hapus sesi n\n' "$C" "$N" "$C" "$N" "$C" "$N"
+    printf '   %s0%s  kembali\n' "$D" "$N"
+    local c v
+    read -rp "  Pilih: " c || return
+    case "$c" in
+      0|x|X|q|Q) return ;;
+      p|P) v=$(pick_acc_scope) && { scope="$v"; page=1; query=""; } ;;
+      s|S) v=$(pick_sort) && sort="$v" ;;
+      /) read -rp "  Cari judul (kosong=reset): " query
+         [ -z "$query" ] && query=""
+         page=1 ;;
+      n|N) (( page < pages )) && page=$((page+1)) ;;
+      b|B) (( page > 1 )) && page=$((page-1)) ;;
+      r|R)
+        local real_idx=$((start+per-1))
+        local ask_idx ask
+        if [ -n "$1" ]; then ask_idx=$1
+        else read -rp "  Resume sesi nomor (Enter = paling baru): " ask_idx; fi
+        ask_idx="${ask_idx:-1}"
+        if [[ "$ask_idx" =~ ^[0-9]+$ ]] && (( ask_idx>=1 && ask_idx<=per )); then
+          real_idx=$((start+ask_idx-1))
+          if (( real_idx < total )); then
+            local acct_pick="$scope"; [ "$scope" = "*" ] && acct_pick=""
+            resume_session "${files[real_idx]}" "$acct_pick"
+            return
+          fi
+        fi
+        err "Nomor tidak valid."; pause ;;
+      l|L) [ ${#files[@]} -gt 0 ] && follow_session "${files[0]}" "$(cfg lines 40)" "$(cfg filter semua)" || { warn "Tidak ada sesi."; pause; } ;;
+      v|V)
+        local ask_idx="${1:-}"; local real_idx
+        if [ -z "$ask_idx" ]; then read -rp "  View sesi nomor: " ask_idx; fi
+        if [[ "$ask_idx" =~ ^[0-9]+$ ]] && (( ask_idx>=1 && ask_idx<=per )); then
+          real_idx=$((start+ask_idx-1))
+          if (( real_idx < total )); then view_session "${files[real_idx]}"; else err "Tidak ada."; pause; fi
+        else err "Nomor tidak valid."; pause; fi ;;
+      '') : ;;
+      h[0-9]*) v="${c#h}"
+         if [[ "$v" =~ ^[0-9]+$ ]] && (( v>=1 && v<=per )); then
+           local real_idx=$((start+v-1))
+           if (( real_idx < total )); then del_one_session "${files[real_idx]}"; page=1; fi
+         else err "Nomor tidak valid."; pause; fi ;;
+      *) if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=per )); then
+           local real_idx=$((start+c-1))
+           if (( real_idx < total )); then
+             local acct_pick="$scope"; [ "$scope" = "*" ] && acct_pick=""
+             resume_session "${files[real_idx]}" "$acct_pick"
+             return
+           else err "Nomor di halaman ini tidak ada."; pause; fi
+         else err "Pilihan tidak ada."; pause; fi ;;
+    esac
+  done
+}
+
+pick_sort() {
+  local c
+  {
+    sect "URUTKAN SESI"
+    printf '   %s 1%s  newest  %s(paling baru di atas)%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 2%s  oldest  %s(paling lama di atas)%s\n' "$G" "$N" "$D" "$N"
+    printf '   %s 3%s  msgs    %s(jumlah pesan paling banyak)%s\n' "$G" "$N" "$D" "$N"
+  } >&2
+  read -rp "  Urut: " c || return 1
+  case "$c" in
+    1) printf 'newest' ;;
+    2) printf 'oldest' ;;
+    3) printf 'msgs' ;;
+    *) return 1 ;;
+  esac
+}
+
+human_size() {
+  local b=${1:-0}
+  if   (( b < 1024 ));         then printf '%dB' "$b"
+  elif (( b < 1048576 ));      then printf '%dK' $((b/1024))
+  elif (( b < 1073741824 ));   then printf '%dM' $((b/1048576))
+  else printf '%dG' $((b/1073741824)); fi
+}
+
+monitor_tmux() {
+  while true; do
+    head2 "PANTAU SESI TMUX" "nomor = masuk sesi · m<n> = matikan sesi n · (Ctrl-b d untuk lepas)"
+    local -a names=()
+    local i=1 nm info acct tag
+    while IFS='|' read -r nm info; do
+      [ -z "$nm" ] && continue
+      if acct="$(sess_acct "$nm")"; then tag="${M}[$acct]${N}"; else tag="${D}[manual]${N}"; fi
+      printf '   %s%2d%s  %-20s %s  %s%s%s\n' "$G" "$i" "$N" "$nm" "$tag" "$D" "$info" "$N"
+      names+=("$nm"); i=$((i+1))
+    done < <(tmux list-sessions -F '#{session_name}|#{session_windows} window · #{?session_attached,tersambung,lepas} · dibuat #{t:session_created}' 2>/dev/null | grep '^deristaku-')
+    [ ${#names[@]} -eq 0 ] && { warn "Tidak ada sesi deristaku-* yang jalan."; pause; return; }
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+    local c v yn
+    read -rp "  Masuk sesi nomor: " c || return
+    case "$c" in
+      0|x|X|'') return ;;
+      m[0-9]*) v="${c#m}"
+        if [[ "$v" =~ ^[0-9]+$ ]] && (( v>=1 && v<=${#names[@]} )); then
+          read -rp "  Matikan sesi '${names[v-1]}'? (y/N): " yn || continue
+          if [[ "$yn" =~ ^[Yy]$ ]]; then
+            tmux kill-session -t "=${names[v-1]}" 2>/dev/null && ok "Sesi '${names[v-1]}' dimatikan." || err "Gagal."
+            pause
+          else warn "Dibatalkan."; pause; fi
+        else err "Nomor tidak valid."; pause; fi ;;
+      *) if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=${#names[@]} )); then
+           tmux_go "${names[c-1]}"
+         else err "Nomor tidak valid."; pause; fi ;;
+    esac
+  done
+}
+
+new_tmux() {
+  head2 "SESI TMUX BARU" "pilih akun dari daftar, atau m = manual"
+  local n=${#ACCOUNTS[@]} i=1 rec c nm klbl ulbl tok url cmd sess wd
+  if [ "$n" -gt 0 ]; then
+    for rec in "${ACCOUNTS[@]}"; do
+      printf '   %s%2d%s  %-12s %s%s · %s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" \
+        "$D" "$(short "$(field "$rec" 4)")" "$(field "$rec" 6)" "$N"
+      i=$((i+1))
+    done
+  fi
+  printf '   %s m%s  manual (nama + command bebas)\n' "$C" "$N"
+  printf '   %s 0%s  kembali\n' "$D" "$N"
+  read -rp "  Pilih: " c || return
+  case "$c" in
+    0|x|X|'') return ;;
+    m|M)
+      read -rp "  Nama sesi: " nm || return
+      [ -z "$nm" ] && { warn "Dibatalkan."; pause; return; }
+      sess="$(acc_sess "$nm")"
+      if tmux_exists "$sess"; then
+        warn "Sesi '$sess' sudah ada — menyambung..."; sleep 1
+      else
+        read -rp "  Command [shell]: " cmd
+        if [ -z "$cmd" ]; then tmux new-session -d -s "$sess"
+        else tmux new-session -d -s "$sess" "$cmd"; fi
+      fi
+      tmux_go "$sess" ;;
+    *)
+      if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=n )); then
+        rec="${ACCOUNTS[c-1]}"; nm="$(field "$rec" 1)"
+        klbl="$(field "$rec" 2)"; ulbl="$(field "$rec" 3)"
+        tok="$(key_token "$klbl")"; url="$(url_resolve "$ulbl")"
+        sess="$(acc_sess "$nm")"
+        if tmux_exists "$sess"; then
+          warn "Sesi '$sess' sudah ada — menyambung..."; sleep 1; tmux_go "$sess"; return
+        fi
+        cmd="$(field "$rec" 5)"; [ -z "$cmd" ] && cmd="$(cfg cmd claude)"
+        wd="$(acc_dir "$nm")"; mkdir -p "$wd" 2>/dev/null
+        tmux new-session -d -s "$sess" -c "$wd" \
+          "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$(field "$rec" 4)' exec $cmd"
+        tmux_go "$sess"
+      else err "Pilihan tidak ada."; pause; fi ;;
+  esac
+}
+
+kill_all_tmux() {
+  head2 "MATIKAN SEMUA SESI TMUX"
+  local sessions s yn
+  sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^deristaku-' || true)"
+  [ -z "$sessions" ] && { warn "Tidak ada sesi deristaku-* yang jalan."; pause; return; }
+  printf '%s\n' "$sessions" | sed "s/^/   ${D}·${N} /"
+  echo
+  read -rp "  Matikan semua sesi ini? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return; }
+  while IFS= read -r s; do
+    [ -n "$s" ] && tmux kill-session -t "=$s" 2>/dev/null
+  done <<< "$sessions"
+  ok "Semua sesi deristaku-* dimatikan."; pause
+}
+
+clear_all_chat() {
+  head2 "HAPUS SEMUA RIWAYAT CHAT" "folder memory/ tetap dipertahankan"
+  [ -d "$PROJDIR" ] || { warn "Tidak ada folder riwayat."; pause; return; }
+  local n yn proj
+  n="$(find "$PROJDIR" -maxdepth 2 -name '*.jsonl' 2>/dev/null | wc -l)"
+  printf '  %s%s file sesi akan dihapus.%s\n\n' "$D" "$n" "$N"
+  read -rp "  Yakin hapus SEMUA riwayat chat? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return; }
+  for proj in "$PROJDIR"/*/; do
+    [ -d "$proj" ] || continue
+    find "$proj" -mindepth 1 -maxdepth 1 ! -name memory -exec rm -rf {} +
+  done
+  ok "Riwayat chat dihapus, folder memory/ aman."; pause
+}
+
+manage_urls() {
+  while true; do
+    head2 "KELOLA URL" "${#URLS[@]} url tersimpan"
+    local i=1 rec c
+    for rec in "${URLS[@]}"; do
+      local n; n="$(url_usage "$(field "$rec" 1)")"
+      printf '   %s%2d%s  %-20s  %s%s%s  %s[%s akun pakai]%s\n' \
+        "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(field "$rec" 2)" "$N" \
+        "$Y" "$n" "$N"
+      i=$((i+1))
+    done
+    sect "AKSI"
+    printf '   %sa%s  tambah url       %se%s  ubah url\n' "$C" "$N" "$C" "$N"
+    printf '   %sd%s  hapus url        %s0%s  kembali\n' "$C" "$N" "$D" "$N"
+    read -rp "  Pilih: " c || return
+    case "$c" in
+      0|x|X|'') return ;;
+      a|A) add_url ;;
+      e|E) edit_url ;;
+      d|D) del_url ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+add_url() {
+  head2 "TAMBAH URL" "kosong + Enter = batal"
+  local lbl url
+  read -rp "  Label url (mis. fastrouter-io): " lbl || return
+  [ -z "$lbl" ] && { warn "Dibatalkan."; pause; return; }
+  url_exists "$lbl" && { err "Label '$lbl' sudah ada."; pause; return; }
+  read -rp "  URL (https://...): " url || return
+  [ -z "$url" ] && { warn "URL kosong, dibatalkan."; pause; return; }
+  case "$url" in
+    http://*|https://*) : ;;
+    *) warn "URL harus mulai dengan http:// atau https://"; pause; return ;;
+  esac
+  URLS+=("$lbl|$url")
+  ok "URL '$lbl' ditambah."; pause
+  commit
+}
+
+edit_url() {
+  local n=${#URLS[@]} i=1 rec c target v
+  [ "$n" -eq 0 ] && { warn "Belum ada URL."; pause; return; }
+  for rec in "${URLS[@]}"; do
+    printf '   %s%2d%s  %-20s  %s%s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(field "$rec" 2)" "$N"
+    i=$((i+1))
+  done
+  printf '   %s 0%s  kembali\n' "$D" "$N"
+  read -rp "  Ubah url nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  target=$((c-1))
+  local cur="${URLS[target]}" lbl url
+  lbl=$(field "$cur" 1); url=$(field "$cur" 2)
+  while true; do
+    head2 "EDIT URL · $lbl"
+    printf '   %s 1%s  Label  %s\n' "$G" "$N" "$lbl"
+    printf '   %s 2%s  URL    %s%s%s\n' "$G" "$N" "$D" "$url" "$N"
+    printf '   %s 0%s  selesai & simpan\n' "$D" "$N"
+    read -rp "  Ubah nomor: " c || break
+    case "$c" in
+      0|''|x|X) break ;;
+      1) read -rp "  Label baru: " v
+         if [ -n "$v" ] && ! url_exists "$v"; then lbl="$v"
+         elif [ -n "$v" ]; then err "Label sudah dipakai."; pause; fi ;;
+      2) read -rp "  URL baru: " v
+         [ -n "$v" ] && {
+           case "$v" in
+             http://*|https://*) url="$v" ;;
+             *) warn "URL harus http:// atau https://"; pause ;;
+           esac
+         } ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+    URLS[target]="$lbl|$url"
+  done
+  ok "Tersimpan."; pause; commit
+}
+
+del_url() {
+  local n=${#URLS[@]} i=1 rec c yn idx
+  [ "$n" -eq 0 ] && { warn "Belum ada URL."; pause; return; }
+  for rec in "${URLS[@]}"; do
+    printf '   %s%2d%s  %-20s  %s%s%s  %s[%s akun]%s\n' \
+      "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "$(field "$rec" 2)" "$N" \
+      "$Y" "$(url_usage "$(field "$rec" 1)")" "$N"
+    i=$((i+1))
+  done
+  printf '   %s 0%s  kembali\n' "$D" "$N"
+  read -rp "  Hapus url nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  idx=$((c-1))
+  local lbl="${URLS[idx]%%|*}"
+  local used; used="$(url_usage "$lbl")"
+  if [ "$used" -gt 0 ]; then
+    err "URL '$lbl' masih dipakai $used akun. Edit akun dulu sebelum hapus."; pause; return
+  fi
+  read -rp "  Yakin hapus $lbl? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return; }
+  URLS=("${URLS[@]:0:idx}" "${URLS[@]:idx+1}")
+  ok "URL $lbl dihapus."; pause
+  commit
+}
+
+pick_url() {
+  local i=1 rec c
+  [ ${#URLS[@]} -eq 0 ] && { warn "Belum ada URL — tambahkan dulu."; pause; return 1; }
+  {
+    sect "PILIH URL"
+    for rec in "${URLS[@]}"; do
+      printf '   %s%2d%s  %-20s  %s%s%s\n' "$G" "$i" "$N" \
+        "$(field "$rec" 1)" "$D" "$(field "$rec" 2)" "$N"
+      i=$((i+1))
+    done
+    printf '   %s 0%s  kembali\n' "$D" "$N"
+  } >&2
+  read -rp "  URL: " c || return 1
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return 1
+  if [[ "$c" =~ ^[0-9]+$ ]] && (( c>=1 && c<=${#URLS[@]} )); then
+    printf '%s' "$(field "${URLS[c-1]}" 1)"; return 0
+  fi
+  err "Nomor tidak valid." >&2; return 1
+}
+
+manage_keys() {
+  while true; do
+    head2 "KELOLA API KEY" "${#API_KEYS[@]} key tersimpan"
+    local i=1 rec rec2 c
+    for rec in "${API_KEYS[@]}"; do
+      local n; n="$(key_usage "$(field "$rec" 1)")"
+      printf '   %s%2d%s  %-20s %s%s…%s  %s[%s akun pakai]%s\n' \
+        "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "${rec##*|}" "$N" \
+        "$Y" "$n" "$N"
+      i=$((i+1))
+    done
+    sect "AKSI"
+    printf '   %sa%s  tambah key       %se%s  ubah key\n' "$C" "$N" "$C" "$N"
+    printf '   %sd%s  hapus key        %s0%s  kembali\n' "$C" "$N" "$D" "$N"
+    read -rp "  Pilih: " c || return
+    case "$c" in
+      0|x|X|'') return ;;
+      a|A) add_key ;;
+      e|E) edit_key ;;
+      d|D) del_key ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+add_key() {
+  head2 "TAMBAH API KEY" "kosong + Enter = batal"
+  local lbl tok
+  read -rp "  Label key (mis. agentrouter-2): " lbl || return
+  [ -z "$lbl" ] && { warn "Dibatalkan."; pause; return; }
+  key_exists "$lbl" && { err "Label '$lbl' sudah ada."; pause; return; }
+  read -rp "  Token (sk-... / knkt-...): " tok || return
+  [ -z "$tok" ] && { warn "Token kosong, dibatalkan."; pause; return; }
+  API_KEYS+=("$lbl|$tok")
+  ok "Key '$lbl' ditambah."; pause
+  commit
+}
+
+edit_key() {
+  local n=${#API_KEYS[@]} i=1 rec c target v
+  [ "$n" -eq 0 ] && { warn "Belum ada API key."; pause; return; }
+  for rec in "${API_KEYS[@]}"; do
+    printf '   %s%2d%s  %-20s %s%s…%s%s\n' "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "${rec##*|}" "$N"
+    i=$((i+1))
+  done
+  printf '   %s 0%s  kembali\n' "$D" "$N"
+  read -rp "  Ubah key nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  target=$((c-1))
+  local cur="${API_KEYS[target]}" lbl tok
+  lbl=$(field "$cur" 1); tok=$(field "$cur" 2)
+  while true; do
+    head2 "EDIT KEY · $lbl"
+    printf '   %s 1%s  Label  %s\n' "$G" "$N" "$lbl"
+    printf '   %s 2%s  Token  %s%s…%s%s\n' "$G" "$N" "$D" "${tok:0:14}…${tok: -6}" "$N"
+    printf '   %s 0%s  selesai & simpan\n' "$D" "$N"
+    read -rp "  Ubah nomor: " c || break
+    case "$c" in
+      0|''|x|X) break ;;
+      1) read -rp "  Label baru: " v
+         if [ -n "$v" ] && ! key_exists "$v"; then lbl="$v"
+         elif [ -n "$v" ]; then err "Label sudah dipakai."; pause; fi ;;
+      2) read -rp "  Token baru: " v; [ -n "$v" ] && tok="$v" ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+    API_KEYS[target]="$lbl|$tok"
+  done
+  ok "Tersimpan."; pause; commit
+}
+
+del_key() {
+  local n=${#API_KEYS[@]} i=1 rec c yn idx
+  [ "$n" -eq 0 ] && { warn "Belum ada API key."; pause; return; }
+  for rec in "${API_KEYS[@]}"; do
+    printf '   %s%2d%s  %-20s %s%s…%s  %s[%s akun]%s\n' \
+      "$G" "$i" "$N" "$(field "$rec" 1)" "$D" "${rec##*|}" "$N" \
+      "$Y" "$(key_usage "$(field "$rec" 1)")" "$N"
+    i=$((i+1))
+  done
+  printf '   %s 0%s  kembali\n' "$D" "$N"
+  read -rp "  Hapus key nomor: " c || return
+  [[ "$c" =~ ^(0|x|X|)$ ]] && return
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || (( c<1 || c>n )); then err "Nomor tidak valid."; pause; return; fi
+  idx=$((c-1))
+  local lbl="${API_KEYS[idx]%%|*}"
+  local used; used="$(key_usage "$lbl")"
+  if [ "$used" -gt 0 ]; then
+    err "Key '$lbl' masih dipakai $used akun. Edit akun dulu sebelum hapus."; pause; return
+  fi
+  read -rp "  Yakin hapus $lbl? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return; }
+  API_KEYS=("${API_KEYS[@]:0:idx}" "${API_KEYS[@]:idx+1}")
+  ok "Key $lbl dihapus."; pause
+  commit
+}
+
+manage_memory() {
+  local memdir="$HOME/.claude/projects/-root/memory"
+  mkdir -p "$memdir"
+  while true; do
+    mapfile -t mfiles < <(find "$memdir" -maxdepth 1 -name '*.md' ! -name 'MEMORY.md' -printf '%T@|%p\n' 2>/dev/null | sort -rn | cut -d'|' -f2-)
+    local nmem=${#mfiles[@]}
+    head2 "KELOLA MEMORI" "$nmem file tersimpan di memory/"
+    local i=1 f title type size mtime sz_dot
+    for f in "${mfiles[@]}"; do
+      title="$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/^description:[[:space:]]*//; s/^["'"'"']//; s/["'"'"']$//')"
+      [ -z "$title" ] && title="$(basename "$f" .md)"
+      type="$(grep -A2 '^metadata:' "$f" 2>/dev/null | grep -m1 '^[[:space:]]*type:' | sed 's/.*type:[[:space:]]*//')"
+      [ -z "$type" ] && type="-"
+      sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+      mtime="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+      now="$(date +%s)"; (( now - mtime < 86400 )) && sz_dot="${G}●${N}" || sz_dot="${D}○${N}"
+      printf '   %s%2d%s %s %-44s %s%-12s%s %s%5s%s %s\n' \
+        "$G" "$i" "$N" "$sz_dot" \
+        "$(printf '%s' "$title" | cut -c1-44)" \
+        "$M" "$type" "$N" \
+        "$D" "$(human_size "$sz")" "$N" \
+        "$(ago "$mtime")"
+      i=$((i+1))
+    done
+    sect "AKSI"
+    printf '   %sa%s  tambah memori     %se%s  edit (buka di editor)\n' "$C" "$N" "$C" "$N"
+    printf '   %sv%s  lihat isi         %sd%s  hapus memori\n' "$C" "$N" "$C" "$N"
+    printf '   %sr%s  reindex MEMORY.md %s0%s  kembali\n' "$C" "$N" "$D" "$N"
+    local c v k
+    read -rp "  Pilih: " c || return
+    case "$c" in
+      0|x|X|'') return ;;
+      a|A) add_memory ;;
+      e|E)
+        read -rp "  Edit memori nomor: " k
+        if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=nmem )); then edit_memory "${mfiles[k-1]}"
+        else err "Nomor tidak valid."; pause; fi ;;
+      v|V)
+        read -rp "  Lihat memori nomor: " k
+        if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=nmem )); then view_memory "${mfiles[k-1]}"
+        else err "Nomor tidak valid."; pause; fi ;;
+      d|D)
+        read -rp "  Hapus memori nomor: " k
+        if [[ "$k" =~ ^[0-9]+$ ]] && (( k>=1 && k<=nmem )); then del_memory "${mfiles[k-1]}"
+        else err "Nomor tidak valid."; pause; fi ;;
+      r|R) reindex_memory; ok "MEMORY.md diperbarui."; pause ;;
+      *) err "Pilihan tidak ada."; pause ;;
+    esac
+  done
+}
+
+view_memory() {
+  local f="$1" memdir="$HOME/.claude/projects/-root/memory"
+  [ -f "$f" ] || { warn "File tidak ada."; pause; return; }
+  local title type
+  title="$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+  type="$(grep -A2 '^metadata:' "$f" 2>/dev/null | grep -m1 '^[[:space:]]*type:' | sed 's/.*type:[[:space:]]*//')"
+  head2 "ISI MEMORI" "$(basename "$f") · $title · $type"
+  cls
+  printf '\n  %s%s%s\n' "$C$B" "$(basename "$f")" "$N"
+  printf '  %sJudul:%s %s\n' "$D" "$N" "$title"
+  printf '  %sTipe:%s  %s\n' "$D" "$N" "$type"
+  rule
+  local w; w=$(( $(cols) - 4 )); [ "$w" -lt 40 ] && w=40
+  head -200 "$f" | cut -c1-"$w"
+  echo; rule
+  local lines; lines="$(wc -l < "$f")"
+  printf '  %s%d baris%s\n\n' "$D" "$lines" "$N"
+  pause
+}
+
+edit_memory() {
+  local f="$1"
+  [ -f "$f" ] || { warn "File tidak ada."; pause; return; }
+  local editor="${EDITOR:-nano}"
+  command -v "$editor" >/dev/null 2>&1 || editor="nano"
+  command -v "$editor" >/dev/null 2>&1 || editor="vi"
+  printf '  %sBuka %s di %s...%s\n' "$D" "$f" "$editor" "$N"
+  sleep 1
+  cls
+  "$editor" "$f"
+  ok "Selesai edit."; pause
+}
+
+del_memory() {
+  local f="$1" memdir="$HOME/.claude/projects/-root/memory" idx="$memdir/MEMORY.md"
+  [ -f "$f" ] || { warn "File tidak ada."; pause; return; }
+  local title slug yn
+  title="$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+  slug="$(basename "$f" .md)"
+  head2 "HAPUS MEMORI"
+  printf '  %s%s%s\n' "$B" "$title" "$N"
+  printf '  %s%s%s\n\n' "$D" "$f" "$N"
+  read -rp "  Yakin hapus '$title'? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; pause; return; }
+  rm -f "$f" && ok "File dihapus." || { err "Gagal hapus."; pause; return; }
+  if [ -f "$idx" ]; then
+    local tmp; tmp="$(mktemp)"
+    grep -v -F "[$title]($slug.md)" "$idx" > "$tmp" 2>/dev/null && mv "$tmp" "$idx"
+    rm -f "$tmp"
+    ok "Entry di MEMORY.md ikut dibersihkan."
+  fi
+  pause
+}
+
+reindex_memory() {
+  local memdir="$HOME/.claude/projects/-root/memory" idx="$memdir/MEMORY.md"
+  {
+    echo "# Memory"
+    echo
+    for f in "$memdir"/*.md; do
+      [ -f "$f" ] || continue
+      [ "$(basename "$f")" = "MEMORY.md" ] && continue
+      local title slug hook body
+      title="$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/^description:[[:space:]]*//; s/^["'"'"']//; s/["'"'"']$//')"
+      [ -z "$title" ] && title="$(basename "$f" .md)"
+      slug="$(basename "$f" .md)"
+      hook="$(awk 'BEGIN{p=0} /^---$/{c++; next} c>=2{p=1} p{print; if(NR>80)exit}' "$f" | grep -v '^[[:space:]]*$' | head -1 | sed 's/^[[:space:]]*//')"
+      [ -z "$hook" ] && hook="$(basename "$f" .md)"
+      [ "${#hook}" -gt 80 ] && hook="${hook:0:77}..."
+      printf -- '- [%s](%s.md) — %s\n' "$title" "$slug" "$hook"
+    done
+  } > "$idx"
+}
+
+add_memory() {
+  head2 "TAMBAH MEMORI" "kosong + Enter = batal"
+  local memdir="$HOME/.claude/projects/-root/memory"
+  mkdir -p "$memdir"
+  local title body type slug base file i=2 hook idx
+  read -rp "  Judul singkat: " title || return
+  [ -z "$title" ] && { warn "Dibatalkan."; pause; return; }
+  read -rp "  Isi memori   : " body || return
+  [ -z "$body" ] && { warn "Isi kosong, dibatalkan."; pause; return; }
+  read -rp "  Tipe (user/feedback/project/reference) [project]: " type; type="${type:-project}"
+  slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [ -z "$slug" ] && slug="memori"
+  base="$slug"; file="$memdir/$slug.md"
+  while [ -e "$file" ]; do slug="$base-$i"; file="$memdir/$slug.md"; i=$((i+1)); done
+  {
+    echo "---"
+    echo "name: $slug"
+    echo "description: $title"
+    echo "metadata:"
+    echo "  type: $type"
+    echo "---"
+    echo
+    echo "$body"
+  } > "$file"
+  reindex_memory
+  ok "Memori '$title' disimpan."
+  printf '  %s%s%s\n' "$D" "$file" "$N"; pause
+}
+
+chat_active() {
+  local f now mt c=0
+  now="$(date +%s)"
+  while IFS= read -r f; do
+    mt="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    (( now - mt < 45 )) && c=$((c+1))
+  done < <(sess_files)
+  printf '%s' "$c"
+}
+
+main_menu() {
+  local n=${#ACCOUNTS[@]} i=1 rec dot host
+  cls
+  printf '\n  %s%s%s\n' "$C" "$(rep '═' 60)" "$N"
+  printf '  %sDERISTA%s  %s·  Select-CRUD Kendali Claude%s\n' "$C$B" "$N" "$D" "$N"
+  printf '  %s%s akun · %s sesi tmux · %s model · %s chat aktif · mode %s%s\n' \
+    "$D" "$n" "$(tmux_count)" "${#MODELS[@]}" "$(chat_active)" "$(cfg mode tmux)" "$N"
+  printf '  %s%s%s\n' "$C" "$(rep '═' 60)" "$N"
+  if [ "$n" -eq 0 ]; then
+    printf '\n  %sbelum ada akun — tekan a untuk menambah%s\n' "$Y" "$N"
+  else
+    echo
+    for rec in "${ACCOUNTS[@]}"; do
+      if sess_running "$(field "$rec" 1)"; then dot="${G}●${N}"; else dot="${D}○${N}"; fi
+      host="$(field "$rec" 3)"; host="${host#*//}"
+      printf '   %s%2d%s %s %-10s %-22s %-9s %s%s%s\n' \
+        "$G" "$i" "$N" "$dot" "$(field "$rec" 1)" "$(short "$(field "$rec" 4)")" \
+        "$(field "$rec" 6)" "$D" "$host" "$N"
+      i=$((i+1))
+    done
+  fi
+  sect "AKSI"
+  printf '   %sa%s  Tambah akun          %sm%s  Resume sesi Claude\n' "$C" "$N" "$C" "$N"
+  printf '   %se%s  Edit akun            %st%s  Pantau sesi tmux\n' "$C" "$N" "$C" "$N"
+  printf '   %sd%s  Hapus akun           %sn%s  Sesi tmux baru\n' "$C" "$N" "$C" "$N"
+  printf '   %sv%s  Lihat data akun      %sk%s  Matikan semua sesi tmux\n' "$C" "$N" "$C" "$N"
+  printf '   %so%s  Kelola model         %sc%s  Hapus semua riwayat chat\n' "$C" "$N" "$C" "$N"
+  printf '   %sj%s  Kelola API key       %sg%s  Kelola memori\n' "$C" "$N" "$C" "$N"
+  printf '   %su%s  Kelola URL           %ss%s  Pengaturan\n' "$C" "$N" "$C" "$N"
+  printf '   %s0%s  Keluar\n' "$D" "$N"
+  printf '\n  %snomor = jalankan akun · huruf = aksi · m = resume sesi%s\n' "$D" "$N"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# INSTALLER MODE
+# ═══════════════════════════════════════════════════════════════
+install_deps() {
+  printf '\n  %s%sDERISTA Installer%s\n\n' "$C$B" "$N"
+
+  # Update & install basic packages
+  printf '  %s>>%s Updating package list...\n' "$C" "$N"
+  apt-get update -qq 2>/dev/null
+
+  printf '  %s>>%s Installing basic packages...\n' "$C" "$N"
+  apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
+
+  # Install tmux if not present
+  if command -v tmux >/dev/null 2>&1; then
+    printf '  %s✓%s tmux sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing tmux...\n' "$C" "$N"
+    apt-get install -y tmux 2>/dev/null
+  fi
+
+  # Install jq if not present
+  if command -v jq >/dev/null 2>&1; then
+    printf '  %s✓%s jq sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing jq...\n' "$C" "$N"
+    apt-get install -y jq 2>/dev/null
+  fi
+
+  # Install Node.js if not present
+  if command -v node >/dev/null 2>&1; then
+    printf '  %s✓%s Node.js sudah terinstall (%s)\n' "$G" "$N" "$(node -v)"
+  else
+    printf '  %s>>%s Installing Node.js...\n' "$C" "$N"
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null
+    apt-get install -y nodejs 2>/dev/null
+  fi
+
+  # Install Claude Code if not present
+  if command -v claude >/dev/null 2>&1; then
+    printf '  %s✓%s Claude Code sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing Claude Code...\n' "$C" "$N"
+    npm install -g @anthropic-ai/claude-code 2>/dev/null
+  fi
+
+  # Install derista ke /usr/bin
+  printf '  %s>>%s Installing derista ke /usr/bin/derista...\n' "$C" "$N"
+  cp "$SELF" /usr/bin/derista 2>/dev/null
+  chmod +x /usr/bin/derista 2>/dev/null
+
+  printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
+  printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+}
+
+# Handle install argument
+if [ "${1:-}" = "install" ] || [ "${1:-}" = "-i" ]; then
+  install_deps
+  exit 0
+fi
+
+while true; do
+  n=${#ACCOUNTS[@]}
+  m_add=$((n+1)); m_edit=$((n+2)); m_del=$((n+3)); m_view=$((n+4))
+  m_mon=$((n+5)); m_new=$((n+6)); m_kt=$((n+7)); m_cc=$((n+8)); m_mem=$((n+9))
+  m_cl=$((n+10)); m_mdl=$((n+11)); m_set=$((n+12)); m_key=$((n+13)); m_url=$((n+14))
+  main_menu
+  echo
+  read -rp "  Pilih: " ch || { cls; exit 0; }
+  case "$ch" in
+    0|x|X|q|Q) cls; exit 0 ;;
+    a|A) add_account ;;
+    e|E) edit_account ;;
+    d|D) del_account ;;
+    v|V) view_data ;;
+    o|O) manage_models ;;
+    j|J) manage_keys ;;
+    u|U) manage_urls ;;
+    s|S) settings_menu ;;
+    m|M) watch_claude ;;
+    t|T) monitor_tmux ;;
+    n|N) new_tmux ;;
+    k|K) kill_all_tmux ;;
+    c|C) clear_all_chat ;;
+    g|G) manage_memory ;;
+    '') : ;;
+    *[!0-9]*) err "Masukkan nomor akun atau huruf aksi."; pause ;;
+    *)
+      if   (( ch>=1 && ch<=n )); then run_account "${ACCOUNTS[ch-1]}"
+      elif (( ch==m_add ));  then add_account
+      elif (( ch==m_edit )); then edit_account
+      elif (( ch==m_del ));  then del_account
+      elif (( ch==m_view )); then view_data
+      elif (( ch==m_mon ));  then monitor_tmux
+      elif (( ch==m_new ));  then new_tmux
+      elif (( ch==m_kt ));   then kill_all_tmux
+      elif (( ch==m_cc ));   then clear_all_chat
+      elif (( ch==m_mem ));  then manage_memory
+      elif (( ch==m_cl ));   then watch_claude
+      elif (( ch==m_mdl ));  then manage_models
+      elif (( ch==m_set ));  then settings_menu
+      elif (( ch==m_key ));  then manage_keys
+      elif (( ch==m_url ));  then manage_urls
+      else err "Pilihan tidak ada."; pause; fi ;;
+  esac
+done
+
