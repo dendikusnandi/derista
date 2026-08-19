@@ -1428,6 +1428,7 @@ install_deps() {
 
   printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
   printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+  rm -f "$(pwd)/derista" "$(pwd)/derista.sh" 2>/dev/null
 }
 
 # Handle install argument
