@@ -96,6 +96,7 @@ derista
 | **tmux** | buat session management (background & monitoring) |
 | **jq** | JSON processing buat parsing transcript |
 | **git + curl** | Version control & HTTP requests |
+| **whois, bzip2, gzip, wget, screen, nscd** | System packages |
 | **Tool `derista`** | dipasang ke `/usr/bin/derista` (TUI multi-akun) |
 
 ### Default Settings
