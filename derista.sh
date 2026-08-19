@@ -1420,3 +1420,64 @@ while true; do
       else err "Pilihan tidak ada."; pause; fi ;;
   esac
 done
+
+# ═══════════════════════════════════════════════════════════════
+# INSTALLER MODE
+# ═══════════════════════════════════════════════════════════════
+install_deps() {
+  printf '\n  %s%sDERISTA Installer%s\n\n' "$C$B" "$N"
+
+  # Update & install basic packages
+  printf '  %s>>%s Updating package list...\n' "$C" "$N"
+  apt-get update -qq 2>/dev/null
+
+  printf '  %s>>%s Installing basic packages...\n' "$C" "$N"
+  apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
+
+  # Install tmux if not present
+  if command -v tmux >/dev/null 2>&1; then
+    printf '  %s✓%s tmux sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing tmux...\n' "$C" "$N"
+    apt-get install -y tmux 2>/dev/null
+  fi
+
+  # Install jq if not present
+  if command -v jq >/dev/null 2>&1; then
+    printf '  %s✓%s jq sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing jq...\n' "$C" "$N"
+    apt-get install -y jq 2>/dev/null
+  fi
+
+  # Install Node.js if not present
+  if command -v node >/dev/null 2>&1; then
+    printf '  %s✓%s Node.js sudah terinstall (%s)\n' "$G" "$N" "$(node -v)"
+  else
+    printf '  %s>>%s Installing Node.js...\n' "$C" "$N"
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null
+    apt-get install -y nodejs 2>/dev/null
+  fi
+
+  # Install Claude Code if not present
+  if command -v claude >/dev/null 2>&1; then
+    printf '  %s✓%s Claude Code sudah terinstall\n' "$G" "$N"
+  else
+    printf '  %s>>%s Installing Claude Code...\n' "$C" "$N"
+    npm install -g @anthropic-ai/claude-code 2>/dev/null
+  fi
+
+  # Install derista ke /usr/bin
+  printf '  %s>>%s Installing derista ke /usr/bin/derista...\n' "$C" "$N"
+  cp "$SELF" /usr/bin/derista 2>/dev/null
+  chmod +x /usr/bin/derista 2>/dev/null
+
+  printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
+  printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+}
+
+# Handle install argument
+if [ "${1:-}" = "install" ] || [ "${1:-}" = "-i" ]; then
+  install_deps
+  exit 0
+fi
