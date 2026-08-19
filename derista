@@ -1423,7 +1423,7 @@ install_deps() {
 
   # Install derista ke /usr/bin
   printf '  %s>>%s Installing derista ke /usr/bin/derista...\n' "$C" "$N"
-  cp "$SELF" /usr/bin/derista 2>/dev/null
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; cp "$SCRIPT_DIR/$(basename "$0")" /usr/bin/derista 2>/dev/null
   chmod +x /usr/bin/derista 2>/dev/null
 
   printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"

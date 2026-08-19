@@ -59,7 +59,12 @@ Satu script (`derista`) buat bootstrap VPS baru dari nol: pasang Node.js, Claude
 ## Download & Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista | bash -s install
+# Download
+curl -fsSLO https://raw.githubusercontent.com/dendikusnandi/derista/main/derista
+
+# Install
+chmod +x derista
+./derista install
 ```
 
 > ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code, dll.
