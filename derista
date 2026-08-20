@@ -1465,13 +1465,20 @@ install_deps() {
     printf '  %s>>%s Pasang derista ke %s (user)...\n' "$C" "$N" "$dst"
     cp "$SELF" "$dst" 2>/dev/null && chmod +x "$dst" 2>/dev/null
     # Pastikan ~/.local/bin ada di PATH
+    local PATH_NEEDS_RELOAD=0
     case ":$PATH:" in
       *":$HOME/.local/bin:"*) : ;;
       *)
+        # shell yang menjalankan installer ini BELUM punya ~/.local/bin di PATH-nya,
+        # jadi setelah selesai user WAJIB `source` rc / buka terminal baru dulu.
+        PATH_NEEDS_RELOAD=1
         local rc added=0
         for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
           [ -f "$rc" ] || continue
-          grep -q '\.local/bin' "$rc" || { printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"; added=1; }
+          # HANYA cocokkan baris export/assignment PATH beneran — jangan komentar yang
+          # kebetulan nyebut ".local/bin" (bug lama: grep '\.local/bin' kena komentar).
+          grep -qE '^[[:space:]]*(export[[:space:]]+)?PATH=.*\.local/bin' "$rc" \
+            || { printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"; added=1; }
         done
         # kalau belum ada rc file sama sekali, buat .bashrc biar PATH nempel
         if [ "$added" -eq 0 ] && [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.zshrc" ]; then
@@ -1500,7 +1507,16 @@ install_deps() {
     [ "$CAN_SYS" -eq 0 ] && printf '  %sTanpa sudo: minta admin pasang paket sistem, atau pasang Node.js lewat nvm lalu ulangi.%s\n' "$D" "$N"
   fi
 
-  if command -v derista >/dev/null 2>&1; then
+  # Pesan JUJUR soal PATH: kalau installer harus nambahin baris PATH ke rc, berarti
+  # shell user SEKARANG belum kenal `derista` (proses anak nggak bisa ubah PATH shell
+  # induk). Makanya JANGAN pakai `command -v derista` buat nentuin pesan di sini —
+  # itu selalu sukses karena installer udah `export PATH` di prosesnya sendiri, bikin
+  # pesan "Jalankan: derista" nyasar padahal user bakal kena "command not found".
+  if [ "${PATH_NEEDS_RELOAD:-0}" -eq 1 ]; then
+    printf '  %s! Hampir selesai%s — derista udah kepasang, tapi terminal ini belum kenal PATH-nya.\n' "$Y" "$N"
+    printf '  %sJalankan dulu:%s %ssource ~/.bashrc%s   %s(atau tutup lalu buka lagi terminal / SSH)%s\n' "$D" "$N" "$C" "$N" "$D" "$N"
+    printf '  %sbaru ketik:%s %sderista%s\n\n' "$D" "$N" "$C" "$N"
+  elif command -v derista >/dev/null 2>&1; then
     printf '  %sJalankan: %sderista%s\n\n' "$D" "$C" "$N"
   else
     printf '  %sBelum di PATH — jalankan: %ssource ~/.bashrc%s%s lalu %sderista%s %s(atau buka terminal baru)%s\n\n' \
