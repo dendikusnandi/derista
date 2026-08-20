@@ -1420,10 +1420,31 @@ install_deps() {
     npm install -g @anthropic-ai/claude-code 2>/dev/null
   fi
 
-  # Install derista ke /usr/bin
-  printf '  %s>>%s Installing derista ke /usr/bin/derista...\n' "$C" "$N"
-  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; cp "$SCRIPT_DIR/$(basename "$0")" /usr/bin/derista 2>/dev/null
-  chmod +x /usr/bin/derista 2>/dev/null
+  local dst
+  if [ "$EUID" -eq 0 ]; then
+    dst="/usr/bin/derista"
+    printf '  %s>>%s Installing derista ke /usr/bin/derista (root)...\n' "$C" "$N"
+    cp "$SELF" "$dst" 2>/dev/null
+  else
+    mkdir -p "$HOME/.local/bin"
+    dst="$HOME/.local/bin/derista"
+    printf '  %s>>%s Installing derista ke ~/.local/bin/derista (user)...\n' "$C" "$N"
+    cp "$SELF" "$dst" 2>/dev/null
+    # Ensure ~/.local/bin in PATH
+    case ":$PATH:" in
+      *":$HOME/.local/bin:"*) : ;;
+      *)
+        if [ -f "$HOME/.bashrc" ] && ! grep -q '\.local/bin' "$HOME/.bashrc"; then
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"
+        fi
+        if [ -f "$HOME/.zshrc" ] && ! grep -q '\.local/bin' "$HOME/.zshrc"; then
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"
+        fi
+        export PATH="$HOME/.local/bin:$PATH"
+        ;;
+    esac
+  fi
+  chmod +x "$dst" 2>/dev/null
 
   printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
   printf '  %sJalankan: derista%s\n\n' "$D" "$N"

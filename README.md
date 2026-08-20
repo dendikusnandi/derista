@@ -59,12 +59,13 @@ Satu script (`derista`) buat bootstrap VPS baru dari nol: pasang Node.js, Claude
 ## Download & Install
 
 ```bash
-rm -rf derista && curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista -o /usr/bin/derista && chmod +x /usr/bin/derista && derista install 
+curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista -o derista && chmod +x derista && ./derista install
 ```
 
 > ✅ **Satu perintah** — download, install, cleanup otomatis.
 > ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code, dll.
 > ✅ **Skip** kalau sudah terinstall.
+> ✅ **Root** → dipasang ke `/usr/bin/derista` · **Non-root** → dipasang ke `~/.local/bin/derista` (PATH ditambah otomatis ke `.bashrc`/`.zshrc`).
 
 ---
 
@@ -78,7 +79,7 @@ rm -rf derista && curl -fsSL https://raw.githubusercontent.com/dendikusnandi/der
 | **jq** | JSON processing buat parsing transcript |
 | **git + curl** | Version control & HTTP requests |
 | **whois, bzip2, gzip, wget, screen, nscd** | System packages |
-| **Tool `derista`** | dipasang ke `/usr/bin/derista` (TUI multi-akun) |
+| **Tool `derista`** | dipasang ke `/usr/bin/derista` (root) atau `~/.local/bin/derista` (user) (TUI multi-akun) |
 
 ### Default Settings
 
@@ -119,8 +120,14 @@ Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat
 ## Uninstall
 
 ```bash
+# Root
 rm /usr/bin/derista
 npm rm -g @anthropic-ai/claude-code
+
+# Non-root
+rm ~/.local/bin/derista
+npm rm -g @anthropic-ai/claude-code
+# Hapus juga baris PATH ~/.local/bin di .bashrc/.zshrc kalau ada
 ```
 
 ---
