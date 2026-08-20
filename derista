@@ -39,6 +39,7 @@ rule()  { printf '  %s%s%s\n' "$D" "$(rep "${1:-─}" 60)" "$N"; }
 sect()  { printf '\n  %s%s%s %s%s%s\n' "$B" "$1" "$N" "$D" "$(rep '─' $((56-${#1})))" "$N"; }
 pause() { read -rp "$(printf '\n  %sEnter untuk kembali...%s ' "$D" "$N")" _ || true; }
 field() { printf '%s' "$1" | cut -d'|' -f"$2"; }
+sq()    { printf '%s' "${1//\'/\'\\\'\'}"; }
 short() { local s="${1#claude-}"; printf '%s' "${s%-20251001}"; }
 ok()    { printf '  %s✓%s %s\n' "$G" "$N" "$1"; }
 warn()  { printf '  %s!%s %s\n' "$Y" "$N" "$1"; }
@@ -257,7 +258,7 @@ run_account() {
   sess="$(acc_sess "$nm")"
   if ! tmux_exists "$sess"; then
     tmux new-session -d -s "$sess" -c "$wd" \
-      "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd"
+      "ANTHROPIC_AUTH_TOKEN='$(sq "$tok")' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd"
   fi
   tmux_go "$sess"
 }
@@ -413,9 +414,7 @@ manage_models() {
              v="${MODELS[k-1]}"
              read -rp "  Yakin hapus $v? (y/N): " c
              if [[ "$c" =~ ^[Yy]$ ]]; then
-               MODELS=(
-"dendi-ai"
-)
+               MODELS=("${MODELS[@]:0:k-1}" "${MODELS[@]:k}")
                ok "Model $v dihapus."; pause; commit
              fi
            else err "Nomor tidak valid."; pause; fi ;;
@@ -676,7 +675,7 @@ resume_session() {
     while tmux_exists "$sess_name"; do sess_name="deristaku-${nm}-${sess}-$i"; i=$((i+1)); done
   fi
   tmux new-session -d -s "$sess_name" -c "$wd" \
-    "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd --resume $sid"
+    "ANTHROPIC_AUTH_TOKEN='$(sq "$tok")' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$mdl' exec $cmd --resume $sid"
   tmux_go "$sess_name"
 }
 
@@ -918,7 +917,7 @@ new_tmux() {
         cmd="$(field "$rec" 5)"; [ -z "$cmd" ] && cmd="$(cfg cmd claude)"
         wd="$(acc_dir "$nm")"; mkdir -p "$wd" 2>/dev/null
         tmux new-session -d -s "$sess" -c "$wd" \
-          "ANTHROPIC_AUTH_TOKEN='$tok' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$(field "$rec" 4)' exec $cmd"
+          "ANTHROPIC_AUTH_TOKEN='$(sq "$tok")' ANTHROPIC_BASE_URL='$url' ANTHROPIC_MODEL='$(field "$rec" 4)' exec $cmd"
         tmux_go "$sess"
       else err "Pilihan tidak ada."; pause; fi ;;
   esac
