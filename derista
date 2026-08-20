@@ -27,9 +27,9 @@ BASEDIR="$HOME/derista"
 
 if [ -t 1 ]; then
   B=$'\e[1m'; D=$'\e[2m'; C=$'\e[36m'; G=$'\e[32m'; Y=$'\e[33m'
-  R=$'\e[31m'; M=$'\e[35m'; U=$'\e[34m'; N=$'\e[0m'
+  R=$'\e[31m'; M=$'\e[35m'; U=$'\e[34m'; W=$'\e[37m'; N=$'\e[0m'
 else
-  B=; D=; C=; G=; Y=; R=; M=; U=; N=
+  B=; D=; C=; G=; Y=; R=; M=; U=; W=; N=
 fi
 
 cols()  { tput cols 2>/dev/null || echo 80; }
