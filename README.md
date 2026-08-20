@@ -59,13 +59,16 @@ Satu script (`derista`) buat bootstrap VPS baru dari nol: pasang Node.js, Claude
 ## Download & Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista -o derista && chmod +x derista && ./derista install
+curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista -o /tmp/derista && bash /tmp/derista install
 ```
 
-> ✅ **Satu perintah** — download, install, cleanup otomatis.
-> ✅ **Otomatis install** Node.js, tmux, jq, git, Claude Code, dll.
-> ✅ **Skip** kalau sudah terinstall.
-> ✅ **Root** → dipasang ke `/usr/bin/derista` · **Non-root** → dipasang ke `~/.local/bin/derista` (PATH ditambah otomatis ke `.bashrc`/`.zshrc`).
+> ✅ **Satu perintah** — download ke `/tmp` (aman dijalankan dari folder apa pun), install, cleanup otomatis.
+> ✅ **Otomatis install** Node.js, tmux, jq, Claude Code, dll — **skip** yang sudah ada.
+> ✅ **Root** → `/usr/bin/derista`, paket sistem dipasang langsung.
+> ✅ **Non-root + sudo** → `~/.local/bin/derista`, paket sistem via sudo, PATH ditambah otomatis ke `.bashrc`/`.zshrc`.
+> ✅ **Non-root tanpa sudo** → `~/.local/bin/derista` + Claude Code ke `~/.local`. Paket sistem di-skip (pakai yang sudah ada); installer kasih **ringkasan jujur** komponen mana yang berhasil.
+
+> ℹ️ Kenapa `-o /tmp/derista`? Biar download nggak gagal (`curl: (23)`) kalau folder saat ini nggak bisa ditulis (mis. user biasa di `/root`) atau bentrok dengan folder data `~/derista`.
 
 ---
 
@@ -147,7 +150,7 @@ npm rm -g @anthropic-ai/claude-code
 ## Keamanan
 
 - Repo ini **nggak nyimpen API key / token apa pun**. Array `API_KEYS` kosong.
-- Token yang lo tambah lewat menu `a` disimpan **lokal** di `/usr/bin/derista`.
+- Token yang lo tambah lewat menu `a` disimpan **lokal** di file `derista` yang terpasang — `/usr/bin/derista` (root) atau `~/.local/bin/derista` (non-root).
 
 ---
 

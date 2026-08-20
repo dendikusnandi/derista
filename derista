@@ -1383,82 +1383,96 @@ main_menu() {
 install_deps() {
   printf '\n  %sDERISTA Installer%s\n\n' "$C$B" "$N"
 
-  # Non-root butuh sudo untuk apt/npm global — pakai kalau tersedia
-  local SUDO=""
-  if [ "$EUID" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-
-  # Update & install basic packages
-  printf '  %s>>%s Updating package list...\n' "$C" "$N"
-  $SUDO apt-get update -qq 2>/dev/null
-
-  printf '  %s>>%s Installing basic packages...\n' "$C" "$N"
-  $SUDO apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
-
-  # Install tmux if not present
-  if command -v tmux >/dev/null 2>&1; then
-    printf '  %s✓%s tmux sudah terinstall\n' "$G" "$N"
-  else
-    printf '  %s>>%s Installing tmux...\n' "$C" "$N"
-    $SUDO apt-get install -y tmux 2>/dev/null
+  # --- Deteksi hak akses: bisa pasang paket sistem (apt / npm -g sistem) atau tidak ---
+  # CAN_SYS=1 kalau root, atau non-root yang punya sudo. CAN_SYS=0 = non-root tanpa sudo.
+  local SUDO="" CAN_SYS=1
+  if [ "$EUID" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else CAN_SYS=0; fi
   fi
 
-  # Install jq if not present
-  if command -v jq >/dev/null 2>&1; then
-    printf '  %s✓%s jq sudah terinstall\n' "$G" "$N"
+  if [ "$EUID" -eq 0 ]; then
+    printf '  %s•%s Mode: %sroot%s — paket sistem dipasang langsung.\n' "$D" "$N" "$G" "$N"
+  elif [ "$CAN_SYS" -eq 1 ]; then
+    printf '  %s•%s Mode: %snon-root + sudo%s — paket sistem via sudo.\n' "$D" "$N" "$G" "$N"
+    printf '  %s>>%s Autentikasi sudo (bisa minta password)...\n' "$C" "$N"
+    $SUDO -v 2>/dev/null || { warn "sudo gagal/ditolak — lanjut tanpa paket sistem."; CAN_SYS=0; SUDO=""; }
   else
-    printf '  %s>>%s Installing jq...\n' "$C" "$N"
-    $SUDO apt-get install -y jq 2>/dev/null
+    printf '  %s•%s Mode: %snon-root tanpa sudo%s — paket sistem di-skip, pakai yang sudah ada.\n' "$D" "$N" "$Y" "$N"
+    warn "Tanpa sudo, apt & npm-global sistem tidak bisa dipasang."
   fi
 
-  # Install / upgrade Node.js (butuh ≥18 buat Claude Code)
-  local nodemaj=0
-  if command -v node >/dev/null 2>&1; then
-    nodemaj="$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')"
-    [[ "$nodemaj" =~ ^[0-9]+$ ]] || nodemaj=0
-  fi
-  if command -v node >/dev/null 2>&1 && (( nodemaj >= 18 )); then
-    printf '  %s✓%s Node.js sudah terinstall (%s)\n' "$G" "$N" "$(node -v)"
-  else
-    if (( nodemaj > 0 )); then
-      printf '  %s>>%s Node.js v%s terlalu tua — upgrade ke 22.x...\n' "$C" "$N" "$nodemaj"
-    else
-      printf '  %s>>%s Installing Node.js...\n' "$C" "$N"
+  if [ "$CAN_SYS" -eq 1 ]; then
+    printf '\n  %s>>%s Update daftar paket...\n' "$C" "$N"
+    $SUDO apt-get update -qq 2>/dev/null
+
+    printf '  %s>>%s Pasang paket dasar...\n' "$C" "$N"
+    $SUDO apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
+
+    if command -v tmux >/dev/null 2>&1; then ok "tmux sudah terinstall"
+    else printf '  %s>>%s Pasang tmux...\n' "$C" "$N"; $SUDO apt-get install -y tmux 2>/dev/null; fi
+
+    if command -v jq >/dev/null 2>&1; then ok "jq sudah terinstall"
+    else printf '  %s>>%s Pasang jq...\n' "$C" "$N"; $SUDO apt-get install -y jq 2>/dev/null; fi
+
+    # Node.js ≥18 buat Claude Code
+    local nodemaj=0
+    if command -v node >/dev/null 2>&1; then
+      nodemaj="$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')"
+      [[ "$nodemaj" =~ ^[0-9]+$ ]] || nodemaj=0
     fi
-    curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO bash - 2>/dev/null
-    $SUDO apt-get install -y nodejs 2>/dev/null
-  fi
-
-  # Install Claude Code if not present
-  if command -v claude >/dev/null 2>&1; then
-    printf '  %s✓%s Claude Code sudah terinstall\n' "$G" "$N"
+    if command -v node >/dev/null 2>&1 && (( nodemaj >= 18 )); then
+      ok "Node.js sudah terinstall ($(node -v))"
+    else
+      if (( nodemaj > 0 )); then printf '  %s>>%s Node.js v%s terlalu tua — upgrade ke 22.x...\n' "$C" "$N" "$nodemaj"
+      else printf '  %s>>%s Pasang Node.js 22.x...\n' "$C" "$N"; fi
+      curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO bash - 2>/dev/null
+      $SUDO apt-get install -y nodejs 2>/dev/null
+    fi
   else
-    printf '  %s>>%s Installing Claude Code...\n' "$C" "$N"
-    $SUDO npm install -g @anthropic-ai/claude-code 2>/dev/null
+    # Non-root tanpa sudo: cuma bisa andalkan yang sudah terpasang di sistem
+    command -v tmux >/dev/null 2>&1 && ok "tmux sudah ada" || warn "tmux belum ada (mode 'langsung' tetap jalan tanpa tmux)"
+    command -v jq   >/dev/null 2>&1 && ok "jq sudah ada"   || warn "jq belum ada — fitur pantau pesan butuh jq"
+    if command -v node >/dev/null 2>&1; then ok "Node.js sudah ada ($(node -v))"
+    else warn "Node.js belum ada — minta admin pasang, atau pakai nvm (https://github.com/nvm-sh/nvm)"; fi
   fi
 
+  # --- Claude Code CLI ---
+  if command -v claude >/dev/null 2>&1; then
+    ok "Claude Code sudah terinstall"
+  elif command -v npm >/dev/null 2>&1; then
+    if [ "$CAN_SYS" -eq 1 ]; then
+      printf '  %s>>%s Pasang Claude Code (npm global)...\n' "$C" "$N"
+      $SUDO npm install -g @anthropic-ai/claude-code 2>/dev/null
+    else
+      # Tanpa root: pasang ke prefix user (~/.local) → binary jatuh ke ~/.local/bin (masuk PATH di bawah)
+      printf '  %s>>%s Pasang Claude Code ke ~/.local (tanpa root)...\n' "$C" "$N"
+      mkdir -p "$HOME/.local"
+      npm install -g --prefix "$HOME/.local" @anthropic-ai/claude-code 2>/dev/null
+    fi
+  else
+    warn "npm belum ada — Claude Code belum bisa dipasang otomatis."
+  fi
+
+  # --- Pasang binary derista ---
   local dst
   if [ "$EUID" -eq 0 ]; then
     dst="/usr/bin/derista"
-    printf '  %s>>%s Installing derista ke /usr/bin/derista (root)...\n' "$C" "$N"
-    cp "$SELF" "$dst" 2>/dev/null
-    chmod +x "$dst" 2>/dev/null
+    printf '  %s>>%s Pasang derista ke %s (root)...\n' "$C" "$N" "$dst"
+    cp "$SELF" "$dst" 2>/dev/null && chmod +x "$dst" 2>/dev/null
   else
     mkdir -p "$HOME/.local/bin"
     dst="$HOME/.local/bin/derista"
-    printf '  %s>>%s Installing derista ke ~/.local/bin/derista (user)...\n' "$C" "$N"
-    cp "$SELF" "$dst" 2>/dev/null
-    chmod +x "$dst" 2>/dev/null
-    # Ensure ~/.local/bin in PATH
+    printf '  %s>>%s Pasang derista ke %s (user)...\n' "$C" "$N" "$dst"
+    cp "$SELF" "$dst" 2>/dev/null && chmod +x "$dst" 2>/dev/null
+    # Pastikan ~/.local/bin ada di PATH
     case ":$PATH:" in
       *":$HOME/.local/bin:"*) : ;;
       *)
-        local added=0
-        if [ -f "$HOME/.bashrc" ] && ! grep -q '\.local/bin' "$HOME/.bashrc"; then
-          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"; added=1
-        fi
-        if [ -f "$HOME/.zshrc" ] && ! grep -q '\.local/bin' "$HOME/.zshrc"; then
-          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"; added=1
-        fi
+        local rc added=0
+        for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+          [ -f "$rc" ] || continue
+          grep -q '\.local/bin' "$rc" || { printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"; added=1; }
+        done
         # kalau belum ada rc file sama sekali, buat .bashrc biar PATH nempel
         if [ "$added" -eq 0 ] && [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.zshrc" ]; then
           printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"
@@ -1467,14 +1481,34 @@ install_deps() {
         ;;
     esac
   fi
+  [ -x "$dst" ] && ok "derista terpasang di $dst" || err "Gagal memasang derista ke $dst"
 
-  printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
-  if command -v derista >/dev/null 2>&1; then
-    printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+  # --- Ringkasan JUJUR: cek apa yang benar-benar tersedia ---
+  sect "HASIL"
+  local miss=0 t cmd lbl
+  for t in "derista|derista" "claude|Claude Code" "node|Node.js" "tmux|tmux" "jq|jq"; do
+    cmd="${t%%|*}"; lbl="${t#*|}"
+    if command -v "$cmd" >/dev/null 2>&1; then ok "$lbl ($(command -v "$cmd"))"
+    else err "$lbl — belum ada"; miss=$((miss+1)); fi
+  done
+
+  echo
+  if [ "$miss" -eq 0 ]; then
+    printf '  %s✓ Instalasi lengkap!%s\n' "$G" "$N"
   else
-    printf '  %sJalankan: %ssource ~/.bashrc%s%s lalu ketik %sderista%s %s(atau buka terminal baru)%s\n\n' \
+    printf '  %s! Sebagian belum terpasang%s (%d item di atas).\n' "$Y" "$N" "$miss"
+    [ "$CAN_SYS" -eq 0 ] && printf '  %sTanpa sudo: minta admin pasang paket sistem, atau pasang Node.js lewat nvm lalu ulangi.%s\n' "$D" "$N"
+  fi
+
+  if command -v derista >/dev/null 2>&1; then
+    printf '  %sJalankan: %sderista%s\n\n' "$D" "$C" "$N"
+  else
+    printf '  %sBelum di PATH — jalankan: %ssource ~/.bashrc%s%s lalu %sderista%s %s(atau buka terminal baru)%s\n\n' \
       "$D" "$C" "$N" "$D" "$C" "$N" "$D" "$N"
   fi
+
+  # Bersihkan file unduhan — TAPI jangan hapus binary yang barusan dipasang
+  [ "$SELF" != "$dst" ] && rm -f "$SELF" 2>/dev/null
   rm -f "$(pwd)/derista" "$(pwd)/derista.sh" 2>/dev/null
 }
 
