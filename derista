@@ -1514,31 +1514,48 @@ install_deps() {
 
 uninstall_derista() {
   printf '\n  %sDERISTA Uninstaller%s\n\n' "$C$B" "$N"
-  local dst yn
-  if [ "$EUID" -eq 0 ]; then
-    dst="/usr/bin/derista"
+  local yn yn2 p me
+  me="$([ "$EUID" -eq 0 ] && echo root || id -un)"
+  printf '  %sUser  :%s %s\n' "$D" "$N" "$me"
+
+  # --- Kumpulkan SEMUA lokasi binary derista yang ada (root & user) ---
+  local cands found=()
+  cands=("/usr/bin/derista" "/usr/local/bin/derista" "$HOME/.local/bin/derista" "$HOME/bin/derista")
+  command -v derista >/dev/null 2>&1 && cands+=("$(command -v derista)")
+  for p in "${cands[@]}"; do
+    [ -n "$p" ] && [ -e "$p" ] || continue
+    case " ${found[*]-} " in *" $p "*) : ;; *) found+=("$p") ;; esac
+  done
+
+  if [ "${#found[@]}" -eq 0 ]; then
+    printf '  %sBinary:%s (tidak ketemu di lokasi umum)\n\n' "$D" "$N"
   else
-    dst="$HOME/.local/bin/derista"
+    printf '  %sBinary:%s\n' "$D" "$N"
+    for p in "${found[@]}"; do printf '    - %s\n' "$p"; done
+    printf '\n'
   fi
-  printf '  %sUser  :%s %s\n' "$D" "$N" "$([ "$EUID" -eq 0 ] && echo root || echo "$(id -un)")"
-  printf '  %sFile  :%s %s\n\n' "$D" "$N" "$dst"
-  if [ ! -e "$dst" ]; then
-    # fallback: kalau lokasi utama kosong, cek lokasi satunya
-    local alt
-    [ "$EUID" -eq 0 ] && alt="$HOME/.local/bin/derista" || alt="/usr/bin/derista"
-    if [ -e "$alt" ]; then
-      warn "Tidak ada di $dst, tapi ketemu di $alt."
-      dst="$alt"
-    else
-      warn "derista tidak ditemukan di $dst."
-      printf '\n'; return
-    fi
-  fi
-  read -rp "  Yakin hapus derista? (y/N): " yn || return
+
+  read -rp "  Lanjut uninstall derista? (y/N): " yn || return
   [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; printf '\n'; return; }
-  if rm -f "$dst" 2>/dev/null; then ok "derista dihapus dari $dst"
-  else err "Gagal hapus $dst (butuh hak akses?)"; printf '\n'; return; fi
-  # Bersihkan baris PATH ~/.local/bin (khusus non-root yang kita tambahkan)
+
+  # Non-root: siapkan sudo buat binary milik root (kalau ada). Tetap lanjut walau tanpa sudo.
+  local SUDO=""
+  if [ "$EUID" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+
+  # --- Hapus tiap binary. Gagal & ada sudo → coba sudo. Tetap gagal → WARN, JANGAN berhenti. ---
+  local need_root=0
+  for p in "${found[@]}"; do
+    if rm -f "$p" 2>/dev/null; then
+      ok "binary dihapus: $p"
+    elif [ -n "$SUDO" ] && $SUDO rm -f "$p" 2>/dev/null; then
+      ok "binary dihapus (sudo): $p"
+    else
+      err "Gagal hapus $p — file milik root. Jalankan: sudo rm -f $p"
+      need_root=1
+    fi
+  done
+
+  # --- Bersihkan baris PATH ~/.local/bin (khusus non-root yang kita tambahkan) ---
   if [ "$EUID" -ne 0 ]; then
     local rc tmp
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
@@ -1553,7 +1570,8 @@ uninstall_derista() {
       fi
     done
   fi
-  # Tawarkan hapus folder data ~/derista biar bersih total (default: TIDAK — lindungi dari kehapus tak sengaja)
+
+  # --- Folder data ~/derista: SELALU ditawarkan, apa pun hasil hapus binary di atas ---
   if [ -d "$BASEDIR" ]; then
     local naccts
     naccts="$(find "$BASEDIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
@@ -1561,15 +1579,20 @@ uninstall_derista() {
     read -rp "  Hapus folder data ini juga? Semua akun & token ikut hilang (y/N): " yn2 || yn2=""
     if [[ "$yn2" =~ ^[Yy]$ ]]; then
       if rm -rf "$BASEDIR" 2>/dev/null; then ok "Folder data dihapus — bersih total."
+      elif [ -n "$SUDO" ] && $SUDO rm -rf "$BASEDIR" 2>/dev/null; then ok "Folder data dihapus (sudo) — bersih total."
       else err "Gagal hapus $BASEDIR (butuh hak akses?)"; fi
-      printf '\n  %sderista sudah di-uninstall & data dibersihkan.%s\n' "$D" "$N"
     else
-      warn "Folder data disimpan."
-      printf '\n  %sderista sudah di-uninstall. Data akun di %s tetap aman.%s\n' "$D" "$BASEDIR" "$N"
+      warn "Folder data disimpan di $BASEDIR."
       printf '  %sHapus manual kalau mau: rm -rf %s%s\n' "$D" "$BASEDIR" "$N"
     fi
+  fi
+
+  # --- Ringkasan akhir ---
+  printf '\n'
+  if [ "$need_root" -eq 1 ]; then
+    warn "derista di-uninstall sebagian — binary milik root di atas perlu dihapus pakai sudo/root."
   else
-    printf '\n  %sderista sudah di-uninstall.%s\n' "$D" "$N"
+    ok "derista sudah di-uninstall bersih."
   fi
   printf '  %sMau hapus Claude Code juga? npm rm -g @anthropic-ai/claude-code%s\n\n' "$D" "$N"
 }
