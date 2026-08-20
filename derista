@@ -1553,8 +1553,25 @@ uninstall_derista() {
       fi
     done
   fi
-  printf '\n  %sderista sudah di-uninstall. Data akun di ~/derista tetap aman.%s\n' "$D" "$N"
-  printf '  %sHapus manual kalau mau: rm -rf ~/derista  ·  npm rm -g @anthropic-ai/claude-code%s\n\n' "$D" "$N"
+  # Tawarkan hapus folder data ~/derista biar bersih total (default: TIDAK — lindungi dari kehapus tak sengaja)
+  if [ -d "$BASEDIR" ]; then
+    local naccts
+    naccts="$(find "$BASEDIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    printf '\n  %sFolder data:%s %s (%s akun)\n' "$D" "$N" "$BASEDIR" "$naccts"
+    read -rp "  Hapus folder data ini juga? Semua akun & token ikut hilang (y/N): " yn2 || yn2=""
+    if [[ "$yn2" =~ ^[Yy]$ ]]; then
+      if rm -rf "$BASEDIR" 2>/dev/null; then ok "Folder data dihapus — bersih total."
+      else err "Gagal hapus $BASEDIR (butuh hak akses?)"; fi
+      printf '\n  %sderista sudah di-uninstall & data dibersihkan.%s\n' "$D" "$N"
+    else
+      warn "Folder data disimpan."
+      printf '\n  %sderista sudah di-uninstall. Data akun di %s tetap aman.%s\n' "$D" "$BASEDIR" "$N"
+      printf '  %sHapus manual kalau mau: rm -rf %s%s\n' "$D" "$BASEDIR" "$N"
+    fi
+  else
+    printf '\n  %sderista sudah di-uninstall.%s\n' "$D" "$N"
+  fi
+  printf '  %sMau hapus Claude Code juga? npm rm -g @anthropic-ai/claude-code%s\n\n' "$D" "$N"
 }
 
 # Handle install argument

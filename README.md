@@ -96,9 +96,20 @@ curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista 
 
 ## Cara pakai
 
-Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat launch Claude Code.
+### Langkah pertama (habis install)
 
-### Menu
+1. **Buka menu** — ketik `derista` lalu Enter.
+   > Non-root & baru pertama install? Jalanin `source ~/.bashrc` dulu (atau buka terminal baru) biar perintah `derista` kebaca.
+2. **Tambah akun** — tekan `a`, lalu isi:
+   - **Nama akun** — bebas, misal `kerja` atau `pribadi`
+   - **URL & Model** — udah ada default (`routers.dendikusnandi.tech` · `dendi-ai`), tinggal Enter aja kalau nggak mau ganti
+   - **Token** — tempel API key / token kamu
+3. **Jalankan akun** — balik ke menu, ketik **nomor** akun (misal `1`) lalu Enter → Claude Code langsung kebuka pakai akun itu.
+4. **Keluar** — ketik `0`.
+
+> 🔑 Inti navigasinya: **nomor = jalankan akun · huruf = aksi (kelola).**
+
+### Menu lengkap
 
 | Tombol | Fungsi |
 |---|---|
@@ -130,7 +141,7 @@ derista uninstall
 
 > ✅ **Root** → hapus `/usr/bin/derista` · **Non-root** → hapus `~/.local/bin/derista` + bersihin baris PATH di `.bashrc`/`.zshrc`.
 > ✅ Alias: `derista -u` atau `derista remove`. Bisa juga lewat menu **`s` (Pengaturan) → `9`**.
-> ✅ Data akun di `~/derista` **tetap aman** (nggak ikut kehapus).
+> ✅ Setelah binary dihapus, installer **nanya** mau hapus folder data `~/derista` juga apa nggak — jawab `y` buat **bersih total**, atau `N` (default) buat nyimpen akun & token.
 
 Manual (kalau perlu):
 
