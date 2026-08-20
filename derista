@@ -27,7 +27,7 @@ URLS=(
 "routers|https://routers.dendikusnandi.tech"
 "agentrouter|https://agentrouter.org"
 "tabitoken|https://tabitoken.com"
-"justwoket|https://api.justwoker.icu*
+"justwoket|https://api.justwoker.icu"
 )
 
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
