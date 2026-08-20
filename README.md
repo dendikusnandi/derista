@@ -139,7 +139,7 @@ curl -fsSL https://raw.githubusercontent.com/dendikusnandi/derista/main/derista 
 derista uninstall
 ```
 
-> ✅ **Root** → hapus `/usr/bin/derista` · **Non-root** → hapus `~/.local/bin/derista` + bersihin baris PATH di `.bashrc`/`.zshrc`.
+> ✅ **Tiap peran urus wilayahnya sendiri:** **root** hapus `/usr/bin/derista` + folder data `/root/derista`; **non-root** hapus `~/.local/bin/derista` + bersihin baris PATH di `.bashrc`/`.zshrc` + folder data `~/derista`. Non-root **nggak bakal** nyentuh `/usr/bin/derista` (itu wilayah root — pakai `sudo derista uninstall`).
 > ✅ Alias: `derista -u` atau `derista remove`. Bisa juga lewat menu **`s` (Pengaturan) → `9`**.
 > ✅ Setelah binary dihapus, installer **nanya** mau hapus folder data `~/derista` juga apa nggak — jawab `y` buat **bersih total**, atau `N` (default) buat nyimpen akun & token.
 

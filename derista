@@ -168,6 +168,21 @@ sess_acct() {
   return 1
 }
 
+# Reverse-map: dari nama folder project Claude (hasil encode workdir akun) balik
+# ke nama akun. Cocokkan ke acc_proj tiap akun -> ROBUST buat home mana pun:
+#   root     : /root/derista/<akun>        -> -root-derista-<akun>
+#   non-root : /home/<user>/derista/<akun> -> -home-<user>-derista-<akun>
+# Ini ganti cara lama yang nge-strip prefiks hardcoded ("-root-…") yang sering
+# gagal (bikin resume "beda akun" error "Akun tidak ada").
+proj_acct() {
+  local pdir="$1" rec nm
+  for rec in "${ACCOUNTS[@]}"; do
+    nm="$(field "$rec" 1)"
+    [ "$(basename "$(acc_proj "$nm")")" = "$pdir" ] && { printf '%s' "$nm"; return 0; }
+  done
+  return 1
+}
+
 pick_model() {
   local i=1 p c
   {
@@ -644,8 +659,8 @@ resume_session() {
   proj="$(basename "$(dirname "$f")")"
   acct="${acct_arg:-}"
   if [ -z "$acct" ]; then
-    acct="${proj#-root-deristaku-}"; acct="${acct#-root-dendie-}"; acct="${acct#-root-}"
-    [ -z "$acct" ] && acct="default"
+    # Deteksi akun pemilik sesi secara robust (jalan buat semua/beda akun).
+    acct="$(proj_acct "$proj")" || acct=""
   fi
   local found=0
   local rec
@@ -653,7 +668,17 @@ resume_session() {
     if [ "$(field "$rec" 1)" = "$acct" ]; then found=1; break; fi
   done
   if [ "$found" -eq 0 ]; then
-    err "Akun '$acct' tidak ada di ACCOUNTS — buat dulu lewat menu a."; pause; return 1
+    # Sesi ini nggak ke-detect punya akun mana (mis. akun sudah dihapus/di-rename,
+    # atau sesi dari project lain). Tetap kasih jalan: user pilih akun buat resume.
+    warn "Sesi ini nggak ke-detect punya akun mana — pilih akun buat resume-nya."
+    local pick
+    pick="$(pick_acc_scope)" || { pause; return 1; }
+    [ "$pick" = "*" ] && { err "Pilih SATU akun (bukan 'semua') buat resume."; pause; return 1; }
+    acct="$pick"
+    for rec in "${ACCOUNTS[@]}"; do
+      if [ "$(field "$rec" 1)" = "$acct" ]; then found=1; break; fi
+    done
+    [ "$found" -eq 0 ] && { err "Akun '$acct' tidak ada."; pause; return 1; }
   fi
   nm="$acct"; klbl="$(field "$rec" 2)"; ulbl="$(field "$rec" 3)"
   mdl="$(field "$rec" 4)"; cmd="$(field "$rec" 5)"; mode="$(field "$rec" 6)"
@@ -755,8 +780,7 @@ watch_claude() {
       mt="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
       sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
       if (( now - mt < 45 )); then dot="${G}●${N}"; else dot="${D}○${N}"; fi
-      acct="$(basename "$(dirname "$f")")"; acct="${acct#-root-deristaku-}"; acct="${acct#-root-dendie-}"; acct="${acct#-root-}"
-      [ -z "$acct" ] && acct="-"
+      acct="$(proj_acct "$(basename "$(dirname "$f")")")" || acct="?"
       printf '   %s%2d%s %s %s\n' "$G" "$i" "$N" "$dot" "$(printf '%s' "$title" | cut -c1-44)"
       printf '        %s@%s%s  %s%s%s  %s· %s pesan · %s reply · %s tool · %s%s\n' \
         "$D" "$acct" "$N" "$M" "$nu+$na+$nk" "$N" "$D" "$nu" "$na" "$nk" "$(ago "$mt")" "$N"
@@ -1534,40 +1558,51 @@ uninstall_derista() {
   me="$([ "$EUID" -eq 0 ] && echo root || id -un)"
   printf '  %sUser  :%s %s\n' "$D" "$N" "$me"
 
-  # --- Kumpulkan SEMUA lokasi binary derista yang ada (root & user) ---
-  local cands found=()
-  cands=("/usr/bin/derista" "/usr/local/bin/derista" "$HOME/.local/bin/derista" "$HOME/bin/derista")
-  command -v derista >/dev/null 2>&1 && cands+=("$(command -v derista)")
+  # --- Lokasi binary sesuai PERAN. Tiap peran cuma urus wilayahnya sendiri: ---
+  #   root     -> /usr/bin/derista (+ /usr/local/bin) + folder data /root/derista
+  #   non-root -> ~/.local/bin/derista (+ ~/bin)      + folder data ~/derista
+  # NON-ROOT SENGAJA TIDAK menyentuh /usr/bin/derista (itu wilayah root), begitu
+  # sebaliknya. Masing-masing punya tugas sendiri.
+  local cands=()
+  if [ "$EUID" -eq 0 ]; then
+    cands=("/usr/bin/derista" "/usr/local/bin/derista")
+    printf '  %sPeran :%s root — hapus binary sistem + folder data root\n' "$D" "$N"
+  else
+    cands=("$HOME/.local/bin/derista" "$HOME/bin/derista")
+    printf '  %sPeran :%s user — hapus binary di home kamu + folder data kamu\n' "$D" "$N"
+  fi
+
+  local found=()
   for p in "${cands[@]}"; do
     [ -n "$p" ] && [ -e "$p" ] || continue
     case " ${found[*]-} " in *" $p "*) : ;; *) found+=("$p") ;; esac
   done
 
   if [ "${#found[@]}" -eq 0 ]; then
-    printf '  %sBinary:%s (tidak ketemu di lokasi umum)\n\n' "$D" "$N"
+    printf '  %sBinary:%s (tidak ketemu di wilayah %s)\n\n' "$D" "$N" "$me"
   else
     printf '  %sBinary:%s\n' "$D" "$N"
     for p in "${found[@]}"; do printf '    - %s\n' "$p"; done
     printf '\n'
   fi
 
-  read -rp "  Lanjut uninstall derista? (y/N): " yn || return
+  # Kalau non-root & ada binary root, kasih tau (TANPA nyentuh) biar mekanismenya jelas.
+  if [ "$EUID" -ne 0 ] && [ -e "/usr/bin/derista" ]; then
+    printf '  %sCatatan:%s %s/usr/bin/derista%s itu punya %sroot%s — biar root sendiri yang uninstall: %ssudo derista uninstall%s\n\n' \
+      "$D" "$N" "$Y" "$N" "$Y" "$N" "$C" "$N"
+  fi
+
+  read -rp "  Lanjut uninstall derista buat $me? (y/N): " yn || return
   [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; printf '\n'; return; }
 
-  # Non-root: siapkan sudo buat binary milik root (kalau ada). Tetap lanjut walau tanpa sudo.
-  local SUDO=""
-  if [ "$EUID" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-
-  # --- Hapus tiap binary. Gagal & ada sudo → coba sudo. Tetap gagal → WARN, JANGAN berhenti. ---
-  local need_root=0
+  # --- Hapus binary di wilayah sendiri (tanpa sudo lintas-peran) ---
+  local removed=0 fail=0
   for p in "${found[@]}"; do
     if rm -f "$p" 2>/dev/null; then
-      ok "binary dihapus: $p"
-    elif [ -n "$SUDO" ] && $SUDO rm -f "$p" 2>/dev/null; then
-      ok "binary dihapus (sudo): $p"
+      ok "binary dihapus: $p"; removed=$((removed+1))
     else
-      err "Gagal hapus $p — file milik root. Jalankan: sudo rm -f $p"
-      need_root=1
+      err "Gagal hapus $p — cek hak akses (file ini seharusnya milik $me)."
+      fail=$((fail+1))
     fi
   done
 
@@ -1587,7 +1622,7 @@ uninstall_derista() {
     done
   fi
 
-  # --- Folder data ~/derista: SELALU ditawarkan, apa pun hasil hapus binary di atas ---
+  # --- Folder data $BASEDIR (punya peran ini): SELALU ditawarkan ---
   if [ -d "$BASEDIR" ]; then
     local naccts
     naccts="$(find "$BASEDIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
@@ -1595,8 +1630,7 @@ uninstall_derista() {
     read -rp "  Hapus folder data ini juga? Semua akun & token ikut hilang (y/N): " yn2 || yn2=""
     if [[ "$yn2" =~ ^[Yy]$ ]]; then
       if rm -rf "$BASEDIR" 2>/dev/null; then ok "Folder data dihapus — bersih total."
-      elif [ -n "$SUDO" ] && $SUDO rm -rf "$BASEDIR" 2>/dev/null; then ok "Folder data dihapus (sudo) — bersih total."
-      else err "Gagal hapus $BASEDIR (butuh hak akses?)"; fi
+      else err "Gagal hapus $BASEDIR (cek hak akses?)"; fi
     else
       warn "Folder data disimpan di $BASEDIR."
       printf '  %sHapus manual kalau mau: rm -rf %s%s\n' "$D" "$BASEDIR" "$N"
@@ -1605,10 +1639,12 @@ uninstall_derista() {
 
   # --- Ringkasan akhir ---
   printf '\n'
-  if [ "$need_root" -eq 1 ]; then
-    warn "derista di-uninstall sebagian — binary milik root di atas perlu dihapus pakai sudo/root."
+  if [ "${#found[@]}" -eq 0 ] && [ "$removed" -eq 0 ]; then
+    warn "Nggak ada binary derista di wilayah $me — mungkin udah kehapus, atau dipasang di peran lain."
+  elif [ "$fail" -gt 0 ]; then
+    warn "derista di-uninstall sebagian ($fail gagal) — cek hak akses."
   else
-    ok "derista sudah di-uninstall bersih."
+    ok "derista ($me) sudah di-uninstall bersih."
   fi
   printf '  %sMau hapus Claude Code juga? npm rm -g @anthropic-ai/claude-code%s\n\n' "$D" "$N"
 }
