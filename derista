@@ -2,11 +2,19 @@
 ACCOUNTS=(
 )
 MODELS=(
-"dendi-ai"
+"dendi"
+"gpt-5.6-sol"
+"claude-fable-5"
+"claude-sonnet-5"
+"claude-opus-4-8"
+"claude-opus-5"
+"claude-opus-4-8-thinking"
+"claude-opus-5-thinking"
+"claude-haiku-4-5-20251001"
 )
 SETTINGS=(
 "url|https://routers.dendikusnandi.tech"
-"model|dendi-ai"
+"model|dendi"
 "cmd|claude"
 "mode|langsung"
 "lines|40"
@@ -16,9 +24,10 @@ SETTINGS=(
 API_KEYS=(
 )
 URLS=(
-"agentrouter-org|https://agentrouter.org"
-"tabitoken-com|https://tabitoken.com"
 "routers|https://routers.dendikusnandi.tech"
+"agentrouter|https://agentrouter.org"
+"tabitoken|https://tabitoken.com"
+"justwoket|https://api.justwoker.icu*
 )
 
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
