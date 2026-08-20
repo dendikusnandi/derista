@@ -1715,4 +1715,3 @@ while true; do
       else err "Pilihan tidak ada."; pause; fi ;;
   esac
 done
-
