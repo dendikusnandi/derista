@@ -437,6 +437,7 @@ settings_menu() {
     printf '   %s 5%s  Baris pesan dipantau %s\n' "$G" "$N" "$(cfg lines 40)"
     printf '   %s 6%s  Interval live (detik) %s\n' "$G" "$N" "$(cfg interval 2)"
     printf '   %s 7%s  Filter pesan bawaan  %s\n' "$G" "$N" "$(cfg filter semua)"
+    printf '   %s 9%s  %sUninstall derista%s   %s(root→/usr/bin · user→~/.local/bin)%s\n' "$R" "$N" "$R" "$N" "$D" "$N"
     printf '   %s 0%s  kembali & simpan\n' "$D" "$N"
     local c v
     read -rp "  Ubah nomor: " c || return
@@ -449,6 +450,7 @@ settings_menu() {
       5) read -rp "  Jumlah baris: " v; [[ "$v" =~ ^[0-9]+$ ]] && (( v>0 )) && cfg_set lines "$v" ;;
       6) read -rp "  Interval detik: " v; [[ "$v" =~ ^[0-9]+$ ]] && (( v>0 )) && cfg_set interval "$v" ;;
       7) v=$(pick_filter) && cfg_set filter "$v" ;;
+      9) uninstall_derista; pause ;;
       *) err "Pilihan tidak ada."; pause ;;
     esac
   done
@@ -1275,7 +1277,8 @@ del_memory() {
   rm -f "$f" && ok "File dihapus." || { err "Gagal hapus."; pause; return; }
   if [ -f "$idx" ]; then
     local tmp; tmp="$(mktemp)"
-    grep -v -F "[$title]($slug.md)" "$idx" > "$tmp" 2>/dev/null && mv "$tmp" "$idx"
+    grep -v -F "[$title]($slug.md)" "$idx" > "$tmp" 2>/dev/null || true
+    cat "$tmp" > "$idx"
     rm -f "$tmp"
     ok "Entry di MEMORY.md ikut dibersihkan."
   fi
@@ -1378,21 +1381,25 @@ main_menu() {
 # INSTALLER MODE
 # ═══════════════════════════════════════════════════════════════
 install_deps() {
-  printf '\n  %s%sDERISTA Installer%s\n\n' "$C$B" "$N"
+  printf '\n  %sDERISTA Installer%s\n\n' "$C$B" "$N"
+
+  # Non-root butuh sudo untuk apt/npm global — pakai kalau tersedia
+  local SUDO=""
+  if [ "$EUID" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
 
   # Update & install basic packages
   printf '  %s>>%s Updating package list...\n' "$C" "$N"
-  apt-get update -qq 2>/dev/null
+  $SUDO apt-get update -qq 2>/dev/null
 
   printf '  %s>>%s Installing basic packages...\n' "$C" "$N"
-  apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
+  $SUDO apt-get --reinstall --fix-missing install -y whois bzip2 gzip coreutils wget screen nscd 2>/dev/null
 
   # Install tmux if not present
   if command -v tmux >/dev/null 2>&1; then
     printf '  %s✓%s tmux sudah terinstall\n' "$G" "$N"
   else
     printf '  %s>>%s Installing tmux...\n' "$C" "$N"
-    apt-get install -y tmux 2>/dev/null
+    $SUDO apt-get install -y tmux 2>/dev/null
   fi
 
   # Install jq if not present
@@ -1400,16 +1407,25 @@ install_deps() {
     printf '  %s✓%s jq sudah terinstall\n' "$G" "$N"
   else
     printf '  %s>>%s Installing jq...\n' "$C" "$N"
-    apt-get install -y jq 2>/dev/null
+    $SUDO apt-get install -y jq 2>/dev/null
   fi
 
-  # Install Node.js if not present
+  # Install / upgrade Node.js (butuh ≥18 buat Claude Code)
+  local nodemaj=0
   if command -v node >/dev/null 2>&1; then
+    nodemaj="$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')"
+    [[ "$nodemaj" =~ ^[0-9]+$ ]] || nodemaj=0
+  fi
+  if command -v node >/dev/null 2>&1 && (( nodemaj >= 18 )); then
     printf '  %s✓%s Node.js sudah terinstall (%s)\n' "$G" "$N" "$(node -v)"
   else
-    printf '  %s>>%s Installing Node.js...\n' "$C" "$N"
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null
-    apt-get install -y nodejs 2>/dev/null
+    if (( nodemaj > 0 )); then
+      printf '  %s>>%s Node.js v%s terlalu tua — upgrade ke 22.x...\n' "$C" "$N" "$nodemaj"
+    else
+      printf '  %s>>%s Installing Node.js...\n' "$C" "$N"
+    fi
+    curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO bash - 2>/dev/null
+    $SUDO apt-get install -y nodejs 2>/dev/null
   fi
 
   # Install Claude Code if not present
@@ -1417,7 +1433,7 @@ install_deps() {
     printf '  %s✓%s Claude Code sudah terinstall\n' "$G" "$N"
   else
     printf '  %s>>%s Installing Claude Code...\n' "$C" "$N"
-    npm install -g @anthropic-ai/claude-code 2>/dev/null
+    $SUDO npm install -g @anthropic-ai/claude-code 2>/dev/null
   fi
 
   local dst
@@ -1425,35 +1441,97 @@ install_deps() {
     dst="/usr/bin/derista"
     printf '  %s>>%s Installing derista ke /usr/bin/derista (root)...\n' "$C" "$N"
     cp "$SELF" "$dst" 2>/dev/null
+    chmod +x "$dst" 2>/dev/null
   else
     mkdir -p "$HOME/.local/bin"
     dst="$HOME/.local/bin/derista"
     printf '  %s>>%s Installing derista ke ~/.local/bin/derista (user)...\n' "$C" "$N"
     cp "$SELF" "$dst" 2>/dev/null
+    chmod +x "$dst" 2>/dev/null
     # Ensure ~/.local/bin in PATH
     case ":$PATH:" in
       *":$HOME/.local/bin:"*) : ;;
       *)
+        local added=0
         if [ -f "$HOME/.bashrc" ] && ! grep -q '\.local/bin' "$HOME/.bashrc"; then
-          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"; added=1
         fi
         if [ -f "$HOME/.zshrc" ] && ! grep -q '\.local/bin' "$HOME/.zshrc"; then
-          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"; added=1
+        fi
+        # kalau belum ada rc file sama sekali, buat .bashrc biar PATH nempel
+        if [ "$added" -eq 0 ] && [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.zshrc" ]; then
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"
         fi
         export PATH="$HOME/.local/bin:$PATH"
         ;;
     esac
   fi
-  chmod +x "$dst" 2>/dev/null
 
   printf '\n  %s✓%s Instalasi selesai!\n' "$G" "$N"
-  printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+  if command -v derista >/dev/null 2>&1; then
+    printf '  %sJalankan: derista%s\n\n' "$D" "$N"
+  else
+    printf '  %sJalankan: %ssource ~/.bashrc%s%s lalu ketik %sderista%s %s(atau buka terminal baru)%s\n\n' \
+      "$D" "$C" "$N" "$D" "$C" "$N" "$D" "$N"
+  fi
   rm -f "$(pwd)/derista" "$(pwd)/derista.sh" 2>/dev/null
+}
+
+uninstall_derista() {
+  printf '\n  %sDERISTA Uninstaller%s\n\n' "$C$B" "$N"
+  local dst yn
+  if [ "$EUID" -eq 0 ]; then
+    dst="/usr/bin/derista"
+  else
+    dst="$HOME/.local/bin/derista"
+  fi
+  printf '  %sUser  :%s %s\n' "$D" "$N" "$([ "$EUID" -eq 0 ] && echo root || echo "$(id -un)")"
+  printf '  %sFile  :%s %s\n\n' "$D" "$N" "$dst"
+  if [ ! -e "$dst" ]; then
+    # fallback: kalau lokasi utama kosong, cek lokasi satunya
+    local alt
+    [ "$EUID" -eq 0 ] && alt="$HOME/.local/bin/derista" || alt="/usr/bin/derista"
+    if [ -e "$alt" ]; then
+      warn "Tidak ada di $dst, tapi ketemu di $alt."
+      dst="$alt"
+    else
+      warn "derista tidak ditemukan di $dst."
+      printf '\n'; return
+    fi
+  fi
+  read -rp "  Yakin hapus derista? (y/N): " yn || return
+  [[ "$yn" =~ ^[Yy]$ ]] || { warn "Dibatalkan."; printf '\n'; return; }
+  if rm -f "$dst" 2>/dev/null; then ok "derista dihapus dari $dst"
+  else err "Gagal hapus $dst (butuh hak akses?)"; printf '\n'; return; fi
+  # Bersihkan baris PATH ~/.local/bin (khusus non-root yang kita tambahkan)
+  if [ "$EUID" -ne 0 ]; then
+    local rc tmp
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      [ -f "$rc" ] || continue
+      if grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$rc"; then
+        tmp="$(mktemp)"
+        # pakai || true: kalau baris itu satu-satunya isi, grep -v exit 1 (bukan error)
+        grep -vxF 'export PATH="$HOME/.local/bin:$PATH"' "$rc" > "$tmp" || true
+        cat "$tmp" > "$rc"
+        rm -f "$tmp"
+        ok "Baris PATH dibersihkan dari $(basename "$rc")"
+      fi
+    done
+  fi
+  printf '\n  %sderista sudah di-uninstall. Data akun di ~/derista tetap aman.%s\n' "$D" "$N"
+  printf '  %sHapus manual kalau mau: rm -rf ~/derista  ·  npm rm -g @anthropic-ai/claude-code%s\n\n' "$D" "$N"
 }
 
 # Handle install argument
 if [ "${1:-}" = "install" ] || [ "${1:-}" = "-i" ]; then
   install_deps
+  exit 0
+fi
+
+# Handle uninstall argument (auto: root hapus /usr/bin, user hapus ~/.local/bin)
+if [ "${1:-}" = "uninstall" ] || [ "${1:-}" = "-u" ] || [ "${1:-}" = "remove" ]; then
+  uninstall_derista
   exit 0
 fi
 

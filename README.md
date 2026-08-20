@@ -119,6 +119,18 @@ Jalankan `derista` → muncul daftar akun. Pilih pakai nomor lalu **Enter** buat
 
 ## Uninstall
 
+**Otomatis** — satu perintah, tau sendiri lokasinya:
+
+```bash
+derista uninstall
+```
+
+> ✅ **Root** → hapus `/usr/bin/derista` · **Non-root** → hapus `~/.local/bin/derista` + bersihin baris PATH di `.bashrc`/`.zshrc`.
+> ✅ Alias: `derista -u` atau `derista remove`. Bisa juga lewat menu **`s` (Pengaturan) → `9`**.
+> ✅ Data akun di `~/derista` **tetap aman** (nggak ikut kehapus).
+
+Manual (kalau perlu):
+
 ```bash
 # Root
 rm /usr/bin/derista
